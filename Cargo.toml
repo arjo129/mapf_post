@@ -1,0 +1,9 @@
+[package]
+name = "mapf_post"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+parry3d = "0.21" # Or parry2d = "0.13" for the 2D version
+parry2d = "0.21"
+nalgebra = "0.32"
