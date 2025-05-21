@@ -10,7 +10,7 @@ Suppose two agents are supposed to cross a junction. MAPF solvers would output s
 
 ![MAPF Junction](docs/MAPF_planner.png)
 
-However we can't directly execute these trajectories. This is due to the fact that robots may or maynot actually move to the appropriate locations. Occassionally, robot dynamics may not match the original plan based on time or introduction of obstacles may lead to
+However we can't directly execute these trajectories. This is due to the fact that robots may or maynot actually move to the appropriate locations. Occassionally, robot dynamics may not match the original plan based on time or introduction of obstacles may lead to the robot getting stuck.
 
 So given trajectories for each robot from a MAPF planner like so:
 
