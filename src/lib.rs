@@ -134,10 +134,6 @@ fn collides(ti1: &Isometry2<f32>, ti2: &Isometry2<f32>, shape_i: &dyn Shape,
     let time_of_impact = cast_shapes_nonlinear(&motion_i, shape_i, &motion_j, shape_j, 0.0, delta_time, true);
     if let Ok(Some(toi)) = time_of_impact {
         // Check if the time of impact is within the delta_time
-        println!("Time of impact: {}", toi.time_of_impact);
-        println!("Agent 1: {:?}", (ti1, ti2));
-        println!("Agent 2: {:?}", (tj2, tj2));
-        println!("Shape Cast: {:?}", toi);
         toi.status == ShapeCastStatus::Converged &&
         toi.time_of_impact <= delta_time || toi.status == ShapeCastStatus::PenetratingOrWithinTargetDist
     } else {
