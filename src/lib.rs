@@ -192,7 +192,7 @@ pub fn mapf_post(mapf_result: MapfResult) -> SemanticPlan {
 
 #[cfg(test)]
 mod tests {
-    use parry2d::na::Vector2;
+    use parry2d::{na::Vector2, utils::hashset::HashSet};
 
     use super::*;
     use std::collections::HashMap; // Make sure HashMap is in scope
@@ -347,6 +347,11 @@ mod tests {
         assert_eq!(semantic_plan.waypoints.len(), 8); // 4 for each agent
         let res = semantic_plan.comes_before(&SemanticWaypoint { agent: 1, trajectory_index: 2 }).unwrap();
         assert_eq!(res.len(), 2); // 2 waypoints should come before this one
-        
+        let t1  = semantic_plan.waypoints[res[0]];
+        let t2  = semantic_plan.waypoints[res[1]];
+
+        let desired = HashSet::from_iter(vec![t1, t2]);
+        assert!(desired.contains(&SemanticWaypoint { agent: 0, trajectory_index: 1 }));
+        assert!(desired.contains(&SemanticWaypoint { agent: 1, trajectory_index: 1 }));
     }
 }
