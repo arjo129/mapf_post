@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use parry2d::na::{Isometry2, Point2};
-use parry2d::query::NonlinearRigidMotion;
+use parry2d::query::{NonlinearRigidMotion, ShapeCastStatus};
 use parry2d::shape::Shape;
 use parry2d::query::cast_shapes_nonlinear;
 
@@ -13,7 +13,7 @@ struct SemanticWaypoint {
 }
 
 #[derive(Clone, Debug, Default)]
-struct SemanticPlan {
+pub struct SemanticPlan {
     /// These serve as graph nodes, describing each waypoint
     pub waypoints: Vec<SemanticWaypoint>,
     /// For book keeping
@@ -41,7 +41,21 @@ impl SemanticPlan {
             return;
         };
         to_vals.push(*before_id);
-        
+    }
+
+    /// Generate a DOT representation of the graph for visualization
+    pub fn to_dot(&self) -> String {
+        let mut dot = String::from("digraph SemanticPlan {\n");
+        for (id, waypoint) in self.waypoints.iter().enumerate() {
+            dot.push_str(&format!("    {} [label=\"Agent: {}, Index: {}\"];\n", id, waypoint.agent, waypoint.trajectory_index));
+        }
+        for (after, befores) in &self.comes_after {
+            for before in befores {
+                dot.push_str(&format!("    {} -> {};\n", before, after));
+            }
+        }
+        dot.push_str("}\n");
+        dot
     }
 }
 
@@ -162,7 +176,7 @@ mod tests {
     }
 }
 pub struct Trajectory {
-    poses: Vec<Isometry2<f32>>
+    pub poses: Vec<Isometry2<f32>>
 }
 
 impl Trajectory {
@@ -171,9 +185,17 @@ impl Trajectory {
     }
 }
 
+
+/// Input of time discretized MAPF result
+/// The trajectories are time discretized, and the
+/// footprints are the shapes of the agents.
+/// We expect all trajectories to be of the same length.
 pub struct MapfResult {
+    /// The trajectories of the agents
     pub trajectories: Vec<Trajectory>,
+    /// The shapes of the agents
     pub footprints: Vec<Arc<dyn Shape>>,
+    /// The time discretization of the trajectories
     pub discretization_timestep: f32
 }
 
@@ -215,12 +237,17 @@ fn collides(ti1: &Isometry2<f32>, ti2: &Isometry2<f32>, shape_i: &dyn Shape,
 {
     let motion_i = calculate_nonlinear_rigid_motion(ti1, ti2, delta_time, Point2::origin());
     let motion_j = calculate_nonlinear_rigid_motion(tj1, tj2, delta_time, Point2::origin());
-    let collision = cast_shapes_nonlinear(&motion_i, shape_i, &motion_j, shape_j, 0.0, delta_time, true);
-    if let Ok(collision) = collision {
-        return collision.is_some();
-    }
-    else {
-        return false;
+    let time_of_impact = cast_shapes_nonlinear(&motion_i, shape_i, &motion_j, shape_j, 0.0, delta_time, true);
+    if let Ok(Some(toi)) = time_of_impact {
+        // Check if the time of impact is within the delta_time
+        println!("Time of impact: {}", toi.time_of_impact);
+        println!("Agent 1: {:?}", (ti1, ti2));
+        println!("Agent 2: {:?}", (tj2, tj2));
+        println!("Shape Cast: {:?}", toi);
+        toi.status == ShapeCastStatus::Converged &&
+        toi.time_of_impact <= delta_time
+    } else {
+        false
     }
 }
 
@@ -237,7 +264,7 @@ pub fn mapf_post(mapf_result: MapfResult) -> SemanticPlan {
         for trajectory_index in 0..mapf_result.trajectories[agent].len() {
             semantic_plan.add_waypoint(&SemanticWaypoint {agent, trajectory_index});
 
-            if trajectory_index < 2 {
+            if trajectory_index < 1 {
                 continue;
             }
             semantic_plan.comes_after.insert(semantic_plan.waypoints.len()-1, vec![semantic_plan.waypoints.len()-2]);
@@ -256,7 +283,8 @@ pub fn mapf_post(mapf_result: MapfResult) -> SemanticPlan {
                         &mapf_result.trajectories[agent2].poses[trajectory_index2 - 1], &mapf_result.trajectories[agent2].poses[trajectory_index2], &*mapf_result.footprints[agent2],
                     mapf_result.discretization_timestep)
                     {
-                        semantic_plan.requires_comes_after(&SemanticWaypoint{agent: agent2, trajectory_index: trajectory_index2}, &SemanticWaypoint{agent: agent1, trajectory_index: trajectory_index1});
+                        println!("Collision detected between agent {} at index {} and agent {} at index {}", agent1, trajectory_index1, agent2, trajectory_index2);
+                        semantic_plan.requires_comes_after(&SemanticWaypoint{agent: agent1, trajectory_index: trajectory_index1}, &SemanticWaypoint{agent: agent2, trajectory_index: trajectory_index2});
                     }
                 }
             }
@@ -264,3 +292,4 @@ pub fn mapf_post(mapf_result: MapfResult) -> SemanticPlan {
     }
     semantic_plan
 }
+
