@@ -44,7 +44,7 @@ impl SemanticPlan {
     }
 
     /// Check which waypoints should come before the given waypoint
-    fn comes_before(&self, waypoint: &SemanticWaypoint) -> Option<&Vec<usize>> {
+    pub fn comes_before(&self, waypoint: &SemanticWaypoint) -> Option<&Vec<usize>> {
         let Some(waypoint_id) = self.agent_time_to_wp_id.get(waypoint) else {
             return None;
         };
@@ -52,6 +52,7 @@ impl SemanticPlan {
     }
 
     /// Generate a DOT representation of the graph for visualization
+    /// This is more for debugging than for actual use
     pub fn to_dot(&self) -> String {
         let mut dot = String::from("digraph SemanticPlan {\n");
         for (id, waypoint) in self.waypoints.iter().enumerate() {

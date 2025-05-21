@@ -25,11 +25,13 @@ fn main() {
                 Isometry2::new(Vector2::new(1.0, 0.0), 0.0),
                 Isometry2::new(Vector2::new(2.0, 0.0), 0.0),
                 Isometry2::new(Vector2::new(2.0, 0.0), 0.0),
+                Isometry2::new(Vector2::new(2.0, 0.0), 0.0),
             ], // Trajectory for agent1 (horizontal path)
             vec![
                 Isometry2::new(Vector2::new(1.0, -1.0), 0.0),
                 Isometry2::new(Vector2::new(1.0, -1.0), 0.0),
                 Isometry2::new(Vector2::new(1.0, 0.0), 0.0),
+                Isometry2::new(Vector2::new(1.0, 1.0), 0.0),
                 Isometry2::new(Vector2::new(1.0, 1.0), 0.0),
             ], // Trajectory for agent2 (vertical path)
         ]
