@@ -6,20 +6,37 @@ use parry2d::query::{NonlinearRigidMotion, ShapeCastStatus};
 use parry2d::shape::Shape;
 use parry2d::query::cast_shapes_nonlinear;
 
+/// Semantic waypoint
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct SemanticWaypoint {
     pub agent: usize,
     pub trajectory_index: usize
 }
 
+/// These are error codes for safe next state retrieval
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SafeNextStatesError
+{
+    /// An incorreect number of agents were added
+    NumberOfAgentsNotMatching,
+    /// The semantic state is incorrect.
+    InvalidSemanticState,
+    /// Report a bug if this ever ever crops up
+    InternalStateMisMatch,
+}
+
+/// Semantic Plan represesnts the plan in terms of semantics.
 #[derive(Clone, Debug, Default)]
 pub struct SemanticPlan {
     /// These serve as graph nodes, describing each waypoint
     pub waypoints: Vec<SemanticWaypoint>,
     /// For book keeping
     agent_time_to_wp_id: HashMap<SemanticWaypoint, usize>,
-    /// Say Key comes after all of Values
-    comes_after: HashMap<usize, Vec<usize>>,
+    /// Key comes after all of Values
+    comes_after_all_of: HashMap<usize, Vec<usize>>,
+    /// Next states. Key is the state
+    next_states: HashMap<usize, Vec<usize>>
 }
 
 impl SemanticPlan {
@@ -36,11 +53,52 @@ impl SemanticPlan {
             return;
         };
         
-        let Some(to_vals) = self.comes_after.get_mut(&after_id) else {
-            self.comes_after.insert(*after_id, vec![*before_id]);
+        let Some(to_vals) = self.comes_after_all_of.get_mut(&after_id) else {
+            self.comes_after_all_of.insert(*after_id, vec![*before_id]);
             return;
         };
         to_vals.push(*before_id);
+
+        let Some(to_vals) = self.next_states.get_mut(&after_id) else {
+            self.next_states.insert(*after_id, vec![*before_id]);
+            return;
+        };
+        to_vals.push(*before_id);
+    }
+
+    /// Given a Semantic State Estimate, 
+    pub fn get_safe_next_actions(&self, current_state: &Vec<SemanticWaypoint>) -> Result<Vec<usize>, SafeNextStatesError>
+    {
+        if current_state.len() != self.waypoints.len() {
+            return Err(SafeNextStatesError::NumberOfAgentsNotMatching);
+        }
+
+        let mut per_agent_marker = HashMap::new();
+        let mut per_agent_next_states = HashMap::new();
+        for state in current_state {
+            per_agent_marker.insert(state.agent, state.trajectory_index);
+            let Some(id) = self.agent_time_to_wp_id.get(state) else {
+                return Err(SafeNextStatesError::InvalidSemanticState);
+            };
+            let Some(next_state) = self.next_states.get(&id) else {
+                return Err(SafeNextStatesError::InternalStateMisMatch);
+            };
+            per_agent_next_states.insert(state.agent, next_state);
+        }
+
+        let iter = per_agent_next_states.iter().filter(|(k,to_check)| {
+            to_check.iter().map(|u| {
+                let u = *u;
+                let desired_state = self.waypoints[u];
+                let Some(agent_index) = per_agent_marker.get(&u) else {
+                    return false;
+                };
+                
+                *agent_index > desired_state.trajectory_index    
+            }).all(|p| p)
+        }).map(|(k,_)|*k);
+
+        Ok(iter.collect())
     }
 
     /// Check which waypoints should come before the given waypoint
@@ -48,7 +106,7 @@ impl SemanticPlan {
         let Some(waypoint_id) = self.agent_time_to_wp_id.get(waypoint) else {
             return None;
         };
-        self.comes_after.get(waypoint_id)
+        self.comes_after_all_of.get(waypoint_id)
     }
 
     /// Generate a DOT representation of the graph for visualization
@@ -58,7 +116,7 @@ impl SemanticPlan {
         for (id, waypoint) in self.waypoints.iter().enumerate() {
             dot.push_str(&format!("    {} [label=\"Agent: {}, Index: {}\"];\n", id, waypoint.agent, waypoint.trajectory_index));
         }
-        for (after, befores) in &self.comes_after {
+        for (after, befores) in &self.comes_after_all_of {
             for before in befores {
                 dot.push_str(&format!("    {} -> {};\n", before, after));
             }
@@ -157,7 +215,8 @@ pub fn mapf_post(mapf_result: MapfResult) -> SemanticPlan {
             if trajectory_index < 1 {
                 continue;
             }
-            semantic_plan.comes_after.insert(semantic_plan.waypoints.len()-1, vec![semantic_plan.waypoints.len()-2]);
+            semantic_plan.comes_after_all_of.insert(semantic_plan.waypoints.len()-1, vec![semantic_plan.waypoints.len()-2]);
+            semantic_plan.next_states.insert(semantic_plan.waypoints.len()-2, vec![semantic_plan.waypoints.len()-1]);
         }
     }
 
@@ -173,7 +232,6 @@ pub fn mapf_post(mapf_result: MapfResult) -> SemanticPlan {
                         &mapf_result.trajectories[agent2].poses[trajectory_index2 - 1], &mapf_result.trajectories[agent2].poses[trajectory_index2], &*mapf_result.footprints[agent2],
                     mapf_result.discretization_timestep)
                     {
-                        println!("Collision detected between agent {} at index {} and agent {} at index {}", agent1, trajectory_index1, agent2, trajectory_index2);
                         semantic_plan.requires_comes_after(&SemanticWaypoint{agent: agent1, trajectory_index: trajectory_index1}, &SemanticWaypoint{agent: agent2, trajectory_index: trajectory_index2});
                     }
                 }
@@ -240,7 +298,7 @@ mod tests {
         plan.requires_comes_after(&wp0_0, &wp1_0);
         let mut expected_comes_after: HashMap<usize, Vec<usize>> = HashMap::new();
         expected_comes_after.insert(2, vec![0]);
-        assert_eq!(plan.comes_after, expected_comes_after);
+        assert_eq!(plan.comes_after_all_of, expected_comes_after);
 
         // wp1_0 (ID 2) also comes after wp0_1 (ID 1)
         plan.requires_comes_after(&wp0_1, &wp1_0);
@@ -248,7 +306,7 @@ mod tests {
         expected_comes_after_2.insert(2, vec![0, 1]); 
         
         // Retrieve the actual vector and sort it for consistent comparison
-        let mut actual_vec = plan.comes_after.get(&2).unwrap().clone();
+        let mut actual_vec = plan.comes_after_all_of.get(&2).unwrap().clone();
         actual_vec.sort_unstable();
         
         // Retrieve the expected vector and sort it
@@ -269,11 +327,11 @@ mod tests {
 
         // Attempt to add a dependency where 'before' waypoint (wp_b) is not in the plan
         plan.requires_comes_after(&wp_b, &wp_a); 
-        assert!(plan.comes_after.is_empty());
+        assert!(plan.comes_after_all_of.is_empty());
 
         // Attempt to add a dependency where 'after' waypoint (wp_c) is not in the plan
         plan.requires_comes_after(&wp_a, &wp_c); 
-        assert!(plan.comes_after.is_empty());
+        assert!(plan.comes_after_all_of.is_empty());
 
         // Add wp_c to the plan
         plan.add_waypoint(&wp_c); // ID 1
@@ -282,7 +340,7 @@ mod tests {
         plan.requires_comes_after(&wp_a, &wp_c); 
         let mut expected_comes_after: HashMap<usize, Vec<usize>> = HashMap::new();
         expected_comes_after.insert(1, vec![0]);
-        assert_eq!(plan.comes_after, expected_comes_after);
+        assert_eq!(plan.comes_after_all_of, expected_comes_after);
     }
 
     #[test]
@@ -296,7 +354,7 @@ mod tests {
         plan.requires_comes_after(&wp1, &wp1);
         let mut expected_comes_after: HashMap<usize, Vec<usize>> = HashMap::new();
         expected_comes_after.insert(0, vec![0]);
-        assert_eq!(plan.comes_after, expected_comes_after);
+        assert_eq!(plan.comes_after_all_of, expected_comes_after);
     }
 
     #[test]
