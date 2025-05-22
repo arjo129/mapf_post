@@ -2,22 +2,21 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use parry2d::na::{Isometry2, Point2};
+use parry2d::query::cast_shapes_nonlinear;
 use parry2d::query::{NonlinearRigidMotion, ShapeCastStatus};
 use parry2d::shape::Shape;
-use parry2d::query::cast_shapes_nonlinear;
 
 /// Semantic waypoint
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct SemanticWaypoint {
     pub agent: usize,
-    pub trajectory_index: usize
+    pub trajectory_index: usize,
 }
 
 /// These are error codes for safe next state retrieval
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum SafeNextStatesError
-{
+pub enum SafeNextStatesError {
     /// An incorreect number of agents were added
     NumberOfAgentsNotMatching,
     /// The semantic state is incorrect.
@@ -36,12 +35,13 @@ pub struct SemanticPlan {
     /// Key comes after all of Values
     comes_after_all_of: HashMap<usize, Vec<usize>>,
     /// Next states. Key is the state
-    next_states: HashMap<usize, Vec<usize>>
+    next_states: HashMap<usize, Vec<usize>>,
 }
 
 impl SemanticPlan {
     fn add_waypoint(&mut self, waypoint: &SemanticWaypoint) {
-        self.agent_time_to_wp_id.insert(*waypoint, self.waypoints.len());
+        self.agent_time_to_wp_id
+            .insert(*waypoint, self.waypoints.len());
         self.waypoints.push(*waypoint);
     }
 
@@ -52,7 +52,7 @@ impl SemanticPlan {
         let Some(before_id) = self.agent_time_to_wp_id.get(after) else {
             return;
         };
-        
+
         let Some(to_vals) = self.comes_after_all_of.get_mut(&after_id) else {
             self.comes_after_all_of.insert(*after_id, vec![*before_id]);
             return;
@@ -66,9 +66,11 @@ impl SemanticPlan {
         to_vals.push(*before_id);
     }
 
-    /// Given a Semantic State Estimate, 
-    pub fn get_safe_next_actions(&self, current_state: &Vec<SemanticWaypoint>) -> Result<Vec<usize>, SafeNextStatesError>
-    {
+    /// Given a Semantic State Estimate,
+    pub fn get_safe_next_actions(
+        &self,
+        current_state: &Vec<SemanticWaypoint>,
+    ) -> Result<Vec<usize>, SafeNextStatesError> {
         if current_state.len() != self.waypoints.len() {
             return Err(SafeNextStatesError::NumberOfAgentsNotMatching);
         }
@@ -86,17 +88,23 @@ impl SemanticPlan {
             per_agent_next_states.insert(state.agent, next_state);
         }
 
-        let iter = per_agent_next_states.iter().filter(|(k,to_check)| {
-            to_check.iter().map(|u| {
-                let u = *u;
-                let desired_state = self.waypoints[u];
-                let Some(agent_index) = per_agent_marker.get(&u) else {
-                    return false;
-                };
-                
-                *agent_index > desired_state.trajectory_index    
-            }).all(|p| p)
-        }).map(|(k,_)|*k);
+        let iter = per_agent_next_states
+            .iter()
+            .filter(|(k, to_check)| {
+                to_check
+                    .iter()
+                    .map(|u| {
+                        let u = *u;
+                        let desired_state = self.waypoints[u];
+                        let Some(agent_index) = per_agent_marker.get(&u) else {
+                            return false;
+                        };
+
+                        *agent_index > desired_state.trajectory_index
+                    })
+                    .all(|p| p)
+            })
+            .map(|(k, _)| *k);
 
         Ok(iter.collect())
     }
@@ -114,7 +122,10 @@ impl SemanticPlan {
     pub fn to_dot(&self) -> String {
         let mut dot = String::from("digraph SemanticPlan {\n");
         for (id, waypoint) in self.waypoints.iter().enumerate() {
-            dot.push_str(&format!("    {} [label=\"Agent: {}, Index: {}\"];\n", id, waypoint.agent, waypoint.trajectory_index));
+            dot.push_str(&format!(
+                "    {} [label=\"Agent: {}, Index: {}\"];\n",
+                id, waypoint.agent, waypoint.trajectory_index
+            ));
         }
         for (after, befores) in &self.comes_after_all_of {
             for before in befores {
@@ -126,17 +137,15 @@ impl SemanticPlan {
     }
 }
 
-
 pub struct Trajectory {
-    pub poses: Vec<Isometry2<f32>>
+    pub poses: Vec<Isometry2<f32>>,
 }
 
 impl Trajectory {
-    pub fn len(&self) ->usize {
+    pub fn len(&self) -> usize {
         self.poses.len()
     }
 }
-
 
 /// Input of time discretized MAPF result
 /// The trajectories are time discretized, and the
@@ -148,17 +157,18 @@ pub struct MapfResult {
     /// The shapes of the agents
     pub footprints: Vec<Arc<dyn Shape>>,
     /// The time discretization of the trajectories
-    pub discretization_timestep: f32
+    pub discretization_timestep: f32,
 }
 
 fn calculate_nonlinear_rigid_motion(
     isometry1: &Isometry2<f32>,
     isometry2: &Isometry2<f32>,
-    delta_time: f32, // Time elapsed between the two isometries
+    delta_time: f32,           // Time elapsed between the two isometries
     local_center: Point2<f32>, // Local center of rotation
 ) -> NonlinearRigidMotion {
     // 1. Calculate Linear Velocity:
-    let linear_velocity = (isometry2.translation.vector - isometry1.translation.vector) / delta_time;
+    let linear_velocity =
+        (isometry2.translation.vector - isometry1.translation.vector) / delta_time;
 
     // 2. Calculate Angular Velocity:
     //    This is more complex and involves extracting the rotation difference.
@@ -183,17 +193,24 @@ fn calculate_nonlinear_rigid_motion(
 }
 
 /// Mock for now
-fn collides(ti1: &Isometry2<f32>, ti2: &Isometry2<f32>, shape_i: &dyn Shape,
-    tj1: &Isometry2<f32>, tj2: &Isometry2<f32>, shape_j: &dyn Shape,
-    delta_time: f32) -> bool
-{
+fn collides(
+    ti1: &Isometry2<f32>,
+    ti2: &Isometry2<f32>,
+    shape_i: &dyn Shape,
+    tj1: &Isometry2<f32>,
+    tj2: &Isometry2<f32>,
+    shape_j: &dyn Shape,
+    delta_time: f32,
+) -> bool {
     let motion_i = calculate_nonlinear_rigid_motion(ti1, ti2, delta_time, Point2::origin());
     let motion_j = calculate_nonlinear_rigid_motion(tj1, tj2, delta_time, Point2::origin());
-    let time_of_impact = cast_shapes_nonlinear(&motion_i, shape_i, &motion_j, shape_j, 0.0, delta_time, true);
+    let time_of_impact = cast_shapes_nonlinear(
+        &motion_i, shape_i, &motion_j, shape_j, 0.0, delta_time, true,
+    );
     if let Ok(Some(toi)) = time_of_impact {
         // Check if the time of impact is within the delta_time
-        toi.status == ShapeCastStatus::Converged &&
-        toi.time_of_impact <= delta_time || toi.status == ShapeCastStatus::PenetratingOrWithinTargetDist
+        toi.status == ShapeCastStatus::Converged && toi.time_of_impact <= delta_time
+            || toi.status == ShapeCastStatus::PenetratingOrWithinTargetDist
     } else {
         false
     }
@@ -205,18 +222,26 @@ fn collides(ti1: &Isometry2<f32>, ti2: &Isometry2<f32>, shape_i: &dyn Shape,
 ///
 /// Based on https://whoenig.github.io/publications/2019_RA-L_Hoenig.pdf
 pub fn mapf_post(mapf_result: MapfResult) -> SemanticPlan {
-    
     let mut semantic_plan = SemanticPlan::default();
     // Type 1 edges
     for agent in 0..mapf_result.trajectories.len() {
         for trajectory_index in 0..mapf_result.trajectories[agent].len() {
-            semantic_plan.add_waypoint(&SemanticWaypoint {agent, trajectory_index});
+            semantic_plan.add_waypoint(&SemanticWaypoint {
+                agent,
+                trajectory_index,
+            });
 
             if trajectory_index < 1 {
                 continue;
             }
-            semantic_plan.comes_after_all_of.insert(semantic_plan.waypoints.len()-1, vec![semantic_plan.waypoints.len()-2]);
-            semantic_plan.next_states.insert(semantic_plan.waypoints.len()-2, vec![semantic_plan.waypoints.len()-1]);
+            semantic_plan.comes_after_all_of.insert(
+                semantic_plan.waypoints.len() - 1,
+                vec![semantic_plan.waypoints.len() - 2],
+            );
+            semantic_plan.next_states.insert(
+                semantic_plan.waypoints.len() - 2,
+                vec![semantic_plan.waypoints.len() - 1],
+            );
         }
     }
 
@@ -227,12 +252,28 @@ pub fn mapf_post(mapf_result: MapfResult) -> SemanticPlan {
                 if agent1 == agent2 {
                     continue;
                 }
-                for trajectory_index2 in trajectory_index1+1..mapf_result.trajectories[agent2].len() {
-                    if collides(&mapf_result.trajectories[agent1].poses[trajectory_index1 - 1], &mapf_result.trajectories[agent1].poses[trajectory_index1], &*mapf_result.footprints[agent1],
-                        &mapf_result.trajectories[agent2].poses[trajectory_index2 - 1], &mapf_result.trajectories[agent2].poses[trajectory_index2], &*mapf_result.footprints[agent2],
-                    mapf_result.discretization_timestep)
-                    {
-                        semantic_plan.requires_comes_after(&SemanticWaypoint{agent: agent1, trajectory_index: trajectory_index1}, &SemanticWaypoint{agent: agent2, trajectory_index: trajectory_index2});
+                for trajectory_index2 in
+                    trajectory_index1 + 1..mapf_result.trajectories[agent2].len()
+                {
+                    if collides(
+                        &mapf_result.trajectories[agent1].poses[trajectory_index1 - 1],
+                        &mapf_result.trajectories[agent1].poses[trajectory_index1],
+                        &*mapf_result.footprints[agent1],
+                        &mapf_result.trajectories[agent2].poses[trajectory_index2 - 1],
+                        &mapf_result.trajectories[agent2].poses[trajectory_index2],
+                        &*mapf_result.footprints[agent2],
+                        mapf_result.discretization_timestep,
+                    ) {
+                        semantic_plan.requires_comes_after(
+                            &SemanticWaypoint {
+                                agent: agent1,
+                                trajectory_index: trajectory_index1,
+                            },
+                            &SemanticWaypoint {
+                                agent: agent2,
+                                trajectory_index: trajectory_index2,
+                            },
+                        );
                     }
                 }
             }
@@ -255,9 +296,18 @@ mod tests {
     #[test]
     fn test_add_waypoint() {
         let mut plan = SemanticPlan::default();
-        let wp1 = SemanticWaypoint { agent: 0, trajectory_index: 0 };
-        let wp2 = SemanticWaypoint { agent: 0, trajectory_index: 1 };
-        let wp3 = SemanticWaypoint { agent: 1, trajectory_index: 0 };
+        let wp1 = SemanticWaypoint {
+            agent: 0,
+            trajectory_index: 0,
+        };
+        let wp2 = SemanticWaypoint {
+            agent: 0,
+            trajectory_index: 1,
+        };
+        let wp3 = SemanticWaypoint {
+            agent: 1,
+            trajectory_index: 0,
+        };
 
         plan.add_waypoint(&wp1);
         assert_eq!(plan.waypoints.len(), 1);
@@ -276,7 +326,10 @@ mod tests {
 
         // Adding an existing waypoint (by value) should still add it again with a new ID
         // This behavior is derived from how `add_waypoint` is implemented.
-        let wp1_again = SemanticWaypoint { agent: 0, trajectory_index: 0 };
+        let wp1_again = SemanticWaypoint {
+            agent: 0,
+            trajectory_index: 0,
+        };
         plan.add_waypoint(&wp1_again);
         assert_eq!(plan.waypoints.len(), 4);
         assert_eq!(plan.waypoints[3], wp1_again);
@@ -286,9 +339,18 @@ mod tests {
     #[test]
     fn test_add_comes_after_basic() {
         let mut plan = SemanticPlan::default();
-        let wp0_0 = SemanticWaypoint { agent: 0, trajectory_index: 0 }; // ID 0
-        let wp0_1 = SemanticWaypoint { agent: 0, trajectory_index: 1 }; // ID 1
-        let wp1_0 = SemanticWaypoint { agent: 1, trajectory_index: 0 }; // ID 2
+        let wp0_0 = SemanticWaypoint {
+            agent: 0,
+            trajectory_index: 0,
+        }; // ID 0
+        let wp0_1 = SemanticWaypoint {
+            agent: 0,
+            trajectory_index: 1,
+        }; // ID 1
+        let wp1_0 = SemanticWaypoint {
+            agent: 1,
+            trajectory_index: 0,
+        }; // ID 2
 
         plan.add_waypoint(&wp0_0);
         plan.add_waypoint(&wp0_1);
@@ -303,12 +365,12 @@ mod tests {
         // wp1_0 (ID 2) also comes after wp0_1 (ID 1)
         plan.requires_comes_after(&wp0_1, &wp1_0);
         let mut expected_comes_after_2: HashMap<usize, Vec<usize>> = HashMap::new();
-        expected_comes_after_2.insert(2, vec![0, 1]); 
-        
+        expected_comes_after_2.insert(2, vec![0, 1]);
+
         // Retrieve the actual vector and sort it for consistent comparison
         let mut actual_vec = plan.comes_after_all_of.get(&2).unwrap().clone();
         actual_vec.sort_unstable();
-        
+
         // Retrieve the expected vector and sort it
         let mut expected_vec = expected_comes_after_2.get(&2).unwrap().clone();
         expected_vec.sort_unstable();
@@ -319,25 +381,34 @@ mod tests {
     #[test]
     fn test_add_comes_after_non_existent_waypoints() {
         let mut plan = SemanticPlan::default();
-        let wp_a = SemanticWaypoint { agent: 0, trajectory_index: 0 };
-        let wp_b = SemanticWaypoint { agent: 0, trajectory_index: 1 };
-        let wp_c = SemanticWaypoint { agent: 0, trajectory_index: 2 };
+        let wp_a = SemanticWaypoint {
+            agent: 0,
+            trajectory_index: 0,
+        };
+        let wp_b = SemanticWaypoint {
+            agent: 0,
+            trajectory_index: 1,
+        };
+        let wp_c = SemanticWaypoint {
+            agent: 0,
+            trajectory_index: 2,
+        };
 
         plan.add_waypoint(&wp_a); // ID 0
 
         // Attempt to add a dependency where 'before' waypoint (wp_b) is not in the plan
-        plan.requires_comes_after(&wp_b, &wp_a); 
+        plan.requires_comes_after(&wp_b, &wp_a);
         assert!(plan.comes_after_all_of.is_empty());
 
         // Attempt to add a dependency where 'after' waypoint (wp_c) is not in the plan
-        plan.requires_comes_after(&wp_a, &wp_c); 
+        plan.requires_comes_after(&wp_a, &wp_c);
         assert!(plan.comes_after_all_of.is_empty());
 
         // Add wp_c to the plan
         plan.add_waypoint(&wp_c); // ID 1
 
         // Now, this dependency should be added successfully: wp_c (ID 1) comes after wp_a (ID 0)
-        plan.requires_comes_after(&wp_a, &wp_c); 
+        plan.requires_comes_after(&wp_a, &wp_c);
         let mut expected_comes_after: HashMap<usize, Vec<usize>> = HashMap::new();
         expected_comes_after.insert(1, vec![0]);
         assert_eq!(plan.comes_after_all_of, expected_comes_after);
@@ -346,7 +417,10 @@ mod tests {
     #[test]
     fn test_add_comes_after_self_dependency() {
         let mut plan = SemanticPlan::default();
-        let wp1 = SemanticWaypoint { agent: 0, trajectory_index: 0 };
+        let wp1 = SemanticWaypoint {
+            agent: 0,
+            trajectory_index: 0,
+        };
 
         plan.add_waypoint(&wp1); // ID 0
 
@@ -365,12 +439,14 @@ mod tests {
         let shape2 = Arc::new(parry2d::shape::Ball::new(0.5));
         let delta_time = 1.0;
 
-        assert!(collides(&isometry1, &isometry2, &*shape1, &isometry1, &isometry2, &*shape2, delta_time));
+        assert!(collides(
+            &isometry1, &isometry2, &*shape1, &isometry1, &isometry2, &*shape2, delta_time
+        ));
     }
 
     #[test]
     fn test_post_processing() {
-         // Create a cross junction MapfResult
+        // Create a cross junction MapfResult
         let mapf_result = MapfResult {
             trajectories: vec![
                 vec![
@@ -400,13 +476,24 @@ mod tests {
         let semantic_plan = mapf_post(mapf_result);
         // Check the number of waypoints
         assert_eq!(semantic_plan.waypoints.len(), 8); // 4 for each agent
-        let res = semantic_plan.comes_before(&SemanticWaypoint { agent: 1, trajectory_index: 2 }).unwrap();
+        let res = semantic_plan
+            .comes_before(&SemanticWaypoint {
+                agent: 1,
+                trajectory_index: 2,
+            })
+            .unwrap();
         assert_eq!(res.len(), 2); // 2 waypoints should come before this one
-        let t1  = semantic_plan.waypoints[res[0]];
-        let t2  = semantic_plan.waypoints[res[1]];
+        let t1 = semantic_plan.waypoints[res[0]];
+        let t2 = semantic_plan.waypoints[res[1]];
 
         let desired = HashSet::from_iter(vec![t1, t2]);
-        assert!(desired.contains(&SemanticWaypoint { agent: 0, trajectory_index: 1 }));
-        assert!(desired.contains(&SemanticWaypoint { agent: 1, trajectory_index: 1 }));
+        assert!(desired.contains(&SemanticWaypoint {
+            agent: 0,
+            trajectory_index: 1
+        }));
+        assert!(desired.contains(&SemanticWaypoint {
+            agent: 1,
+            trajectory_index: 1
+        }));
     }
 }
