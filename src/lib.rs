@@ -6,6 +6,9 @@ use parry2d::query::cast_shapes_nonlinear;
 use parry2d::query::{NonlinearRigidMotion, ShapeCastStatus};
 use parry2d::shape::Shape;
 
+pub use parry2d::na;
+pub use parry2d::shape;
+
 /// Semantic waypoint
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct SemanticWaypoint {
@@ -66,7 +69,9 @@ impl SemanticPlan {
         to_vals.push(*before_id);
     }
 
-    /// Given a Semantic State Estimate,
+    /// Given a Semantic State Estimate, determine the suitable next actions.
+    /// The state estimate should consist of each agents semantic waypoint
+    /// If there is a mismatch between the number of agents and number of
     pub fn get_safe_next_actions(
         &self,
         current_state: &Vec<SemanticWaypoint>,
@@ -137,6 +142,7 @@ impl SemanticPlan {
     }
 }
 
+/// Pose Trajectory
 pub struct Trajectory {
     pub poses: Vec<Isometry2<f32>>,
 }
