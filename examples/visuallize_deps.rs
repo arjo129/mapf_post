@@ -3,8 +3,7 @@ use std::sync::Arc;
 use mapf_post::mapf_post;
 use mapf_post::MapfResult;
 use mapf_post::Trajectory;
-use parry2d::na::Isometry2;
-use parry2d::na::Vector2;
+use mapf_post::na::{Isometry2, Vector2};
 
 pub fn generate_dot_file(mapf_result: MapfResult, output_path: &str) {
     let semantic_plan = mapf_post(mapf_result);
