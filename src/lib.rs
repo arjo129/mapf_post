@@ -95,7 +95,7 @@ impl SemanticPlan {
 
         let iter = per_agent_next_states
             .iter()
-            .filter(|(k, to_check)| {
+            .filter(|(_, to_check)| {
                 to_check
                     .iter()
                     .map(|u| {
@@ -122,6 +122,38 @@ impl SemanticPlan {
         self.comes_after_all_of.get(waypoint_id)
     }
 
+
+    /// Generate a DOT representation of the graph for visualization
+    /// This is more for debugging than for actual use
+    pub fn to_dot_with_results(&self, waypoints: &Vec<SemanticWaypoint>) -> String { 
+        let mut dot = String::from("digraph SemanticPlan {\n");
+        let mut color = "white";
+        for (id, waypoint) in self.waypoints.iter().enumerate() {
+            for wp in waypoints {
+                if  wp.agent ==  waypoint.agent {
+                    if wp.trajectory_index < waypoint.trajectory_index {
+                        color = "lightyellow";
+                    }
+                    else if wp.trajectory_index == waypoint.trajectory_index {
+                        color = "lightgreen";
+                    }
+
+                    break;
+                }
+            }
+            dot.push_str(&format!(
+                "    {} [label=\"Agent: {}, Index: {}\", bgcolor = \"{}\"];\n",
+                id, waypoint.agent, waypoint.trajectory_index, color
+            ));
+        }
+        for (after, befores) in &self.comes_after_all_of {
+            for before in befores {
+                dot.push_str(&format!("    {} -> {};\n", before, after));
+            }
+        }
+        dot.push_str("}\n");
+        dot
+    }
     /// Generate a DOT representation of the graph for visualization
     /// This is more for debugging than for actual use
     pub fn to_dot(&self) -> String {
