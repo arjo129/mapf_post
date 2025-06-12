@@ -124,7 +124,7 @@ impl SemanticPlan {
 
 
     /// Generate a DOT representation of the graph for visualization
-    /// This is more for debugging than for actual use
+    /// Also colors the current state of the world.
     pub fn to_dot_with_results(&self, waypoints: &Vec<SemanticWaypoint>) -> String { 
         let mut dot = String::from("digraph SemanticPlan {\n");
         let mut color = "white";
@@ -142,7 +142,7 @@ impl SemanticPlan {
                 }
             }
             dot.push_str(&format!(
-                "    {} [label=\"Agent: {}, Index: {}\", bgcolor = \"{}\"];\n",
+                "    {} [label=\"Agent: {}, Index: {}\", color = \"{}\"];\n",
                 id, waypoint.agent, waypoint.trajectory_index, color
             ));
         }
