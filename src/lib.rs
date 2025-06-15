@@ -31,6 +31,8 @@ pub enum SafeNextStatesError {
 /// Semantic Plan represesnts the plan in terms of semantics.
 #[derive(Clone, Debug, Default)]
 pub struct SemanticPlan {
+    /// Number of agents
+    pub num_agents: usize,
     /// These serve as graph nodes, describing each waypoint
     pub waypoints: Vec<SemanticWaypoint>,
     /// For book keeping
@@ -76,7 +78,7 @@ impl SemanticPlan {
         &self,
         current_state: &Vec<SemanticWaypoint>,
     ) -> Result<Vec<usize>, SafeNextStatesError> {
-        if current_state.len() != self.waypoints.len() {
+        if current_state.len() != self.num_agents {
             return Err(SafeNextStatesError::NumberOfAgentsNotMatching);
         }
 
@@ -137,8 +139,6 @@ impl SemanticPlan {
                     else if wp.trajectory_index == waypoint.trajectory_index {
                         color = "lightgreen";
                     }
-
-                    break;
                 }
             }
             dot.push_str(&format!(
@@ -261,6 +261,7 @@ fn collides(
 /// Based on https://whoenig.github.io/publications/2019_RA-L_Hoenig.pdf
 pub fn mapf_post(mapf_result: MapfResult) -> SemanticPlan {
     let mut semantic_plan = SemanticPlan::default();
+    semantic_plan.num_agents = mapf_result.trajectories.len();
     // Type 1 edges
     for agent in 0..mapf_result.trajectories.len() {
         for trajectory_index in 0..mapf_result.trajectories[agent].len() {
