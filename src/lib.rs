@@ -79,7 +79,7 @@ impl SemanticPlan {
     pub fn is_safe_to_proceed(
         &self,
         current_state: &Vec<SemanticWaypoint>,
-        agent: usize
+        agent: usize,
     ) -> Result<bool, SafeNextStatesError> {
         // Lots of O(n^2) behaviour that should really be O(n) or O(1) because our function signature takes current semantic state as a vec
         // TODO(arjo): add a new CurrentSemanticState struct. Require that it is a sorted vec or structure with correct
@@ -88,11 +88,12 @@ impl SemanticPlan {
         }
 
         // Get the agents current waypoint
-        let agent_curr_waypoint: Vec<_>  = current_state.iter().filter(|x| x.agent == agent).collect();
-        if(agent_curr_waypoint.len() > 1) {
+        let agent_curr_waypoint: Vec<_> =
+            current_state.iter().filter(|x| x.agent == agent).collect();
+        if (agent_curr_waypoint.len() > 1) {
             return Err(SafeNextStatesError::InvalidSemanticState);
         }
-        if(agent_curr_waypoint.len() < 1) {
+        if (agent_curr_waypoint.len() < 1) {
             return Err(SafeNextStatesError::AgentNotFound);
         }
 
@@ -103,30 +104,35 @@ impl SemanticPlan {
         };
 
         // Find out what dependencies the waypoint should come after
-        let Some(waypoints_that_should_have_been_crossed) = self.comes_before(&agent_next_waypoint) else {
-            return Err(SafeNextStatesError::InternalStateMisMatch)
+        let Some(waypoints_that_should_have_been_crossed) = self.comes_before(&agent_next_waypoint)
+        else {
+            return Err(SafeNextStatesError::InternalStateMisMatch);
         };
 
-        let waypoints_that_should_have_been_crossed = waypoints_that_should_have_been_crossed.iter().map(|wp_id| {
-            self.waypoints[*wp_id]
-        });
+        let waypoints_that_should_have_been_crossed = waypoints_that_should_have_been_crossed
+            .iter()
+            .map(|wp_id| self.waypoints[*wp_id]);
 
         // Now for each waypoint find out if the other robot has crossed it
-        let res: Vec<_> = waypoints_that_should_have_been_crossed.filter(|wp| {
-            let agent_to_check = wp.agent;
-            let agent_curr_loc: Vec<_> = current_state.iter().filter(|x| x.agent == agent_to_check).collect();
-            if(agent_curr_loc.len() > 1) {
-                panic!("malformed")
-            }
-            if(agent_curr_loc.len() < 1) {
-                panic!("Made-up agent")
-            }
-            if(agent_curr_loc[0].trajectory_index < wp.trajectory_index ) {
-                return true;
-            }
-            return false;
-        }).collect();
-
+        let res: Vec<_> = waypoints_that_should_have_been_crossed
+            .filter(|wp| {
+                let agent_to_check = wp.agent;
+                let agent_curr_loc: Vec<_> = current_state
+                    .iter()
+                    .filter(|x| x.agent == agent_to_check)
+                    .collect();
+                if (agent_curr_loc.len() > 1) {
+                    panic!("malformed")
+                }
+                if (agent_curr_loc.len() < 1) {
+                    panic!("Made-up agent")
+                }
+                if (agent_curr_loc[0].trajectory_index < wp.trajectory_index) {
+                    return true;
+                }
+                return false;
+            })
+            .collect();
 
         Ok(res.len() == 0)
     }
@@ -134,7 +140,9 @@ impl SemanticPlan {
     fn get_next_for_agent(&self, waypoint: &SemanticWaypoint) -> Option<SemanticWaypoint> {
         let mut waypoint = waypoint.clone();
         waypoint.trajectory_index += 1;
-        self.agent_time_to_wp_id.get(&waypoint).map(|p| self.waypoints[*p])
+        self.agent_time_to_wp_id
+            .get(&waypoint)
+            .map(|p| self.waypoints[*p])
     }
 
     /// Check which waypoints should come before the given waypoint
@@ -146,19 +154,17 @@ impl SemanticPlan {
         self.comes_after_all_of.get(&waypoint_id)
     }
 
-
     /// Generate a DOT representation of the graph for visualization
     /// Also colors the current state of the world.
-    pub fn to_dot_with_results(&self, waypoints: &Vec<SemanticWaypoint>) -> String { 
+    pub fn to_dot_with_results(&self, waypoints: &Vec<SemanticWaypoint>) -> String {
         let mut dot = String::from("digraph SemanticPlan {\n");
         let mut color = "white";
         for (id, waypoint) in self.waypoints.iter().enumerate() {
             for wp in waypoints {
-                if  wp.agent ==  waypoint.agent {
+                if wp.agent == waypoint.agent {
                     if wp.trajectory_index < waypoint.trajectory_index {
                         color = "lightyellow";
-                    }
-                    else if wp.trajectory_index == waypoint.trajectory_index {
+                    } else if wp.trajectory_index == waypoint.trajectory_index {
                         color = "lightgreen";
                     }
                 }
@@ -293,8 +299,9 @@ pub fn mapf_post(mapf_result: MapfResult) -> SemanticPlan {
             });
 
             if trajectory_index < 1 {
-                semantic_plan.comes_after_all_of.insert(
-                    semantic_plan.waypoints.len() - 1, vec![]);
+                semantic_plan
+                    .comes_after_all_of
+                    .insert(semantic_plan.waypoints.len() - 1, vec![]);
                 continue;
             }
             semantic_plan.comes_after_all_of.insert(
