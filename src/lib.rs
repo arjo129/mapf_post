@@ -60,13 +60,13 @@ impl SemanticPlan {
             return;
         };
 
-        let Some(to_vals) = self.comes_after_all_of.get_mut(&after_id) else {
+        let Some(to_vals) = self.comes_after_all_of.get_mut(after_id) else {
             self.comes_after_all_of.insert(*after_id, vec![*before_id]);
             return;
         };
         to_vals.push(*before_id);
 
-        let Some(to_vals) = self.next_states.get_mut(&after_id) else {
+        let Some(to_vals) = self.next_states.get_mut(after_id) else {
             self.next_states.insert(*after_id, vec![*before_id]);
             return;
         };
@@ -90,15 +90,15 @@ impl SemanticPlan {
         // Get the agents current waypoint
         let agent_curr_waypoint: Vec<_> =
             current_state.iter().filter(|x| x.agent == agent).collect();
-        if (agent_curr_waypoint.len() > 1) {
+        if agent_curr_waypoint.len() > 1 {
             return Err(SafeNextStatesError::InvalidSemanticState);
         }
-        if (agent_curr_waypoint.len() < 1) {
+        if agent_curr_waypoint.is_empty() {
             return Err(SafeNextStatesError::AgentNotFound);
         }
 
         // Try to get the next waypoint for the agent
-        let Some(agent_next_waypoint) = self.get_next_for_agent(&agent_curr_waypoint[0]) else {
+        let Some(agent_next_waypoint) = self.get_next_for_agent(agent_curr_waypoint[0]) else {
             println!("Reached endpoint for {:?}", agent);
             return Ok(false);
         };
@@ -121,24 +121,24 @@ impl SemanticPlan {
                     .iter()
                     .filter(|x| x.agent == agent_to_check)
                     .collect();
-                if (agent_curr_loc.len() > 1) {
+                if agent_curr_loc.len() > 1 {
                     panic!("malformed")
                 }
-                if (agent_curr_loc.len() < 1) {
+                if agent_curr_loc.is_empty() {
                     panic!("Made-up agent")
                 }
-                if (agent_curr_loc[0].trajectory_index < wp.trajectory_index) {
+                if agent_curr_loc[0].trajectory_index < wp.trajectory_index {
                     return true;
                 }
-                return false;
+                false
             })
             .collect();
 
-        Ok(res.len() == 0)
+        Ok(res.is_empty())
     }
 
     fn get_next_for_agent(&self, waypoint: &SemanticWaypoint) -> Option<SemanticWaypoint> {
-        let mut waypoint = waypoint.clone();
+        let mut waypoint = *waypoint;
         waypoint.trajectory_index += 1;
         self.agent_time_to_wp_id
             .get(&waypoint)
@@ -151,7 +151,7 @@ impl SemanticPlan {
             return None;
         };
 
-        self.comes_after_all_of.get(&waypoint_id)
+        self.comes_after_all_of.get(waypoint_id)
     }
 
     /// Generate a DOT representation of the graph for visualization
