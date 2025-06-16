@@ -22,8 +22,10 @@ pub struct SemanticWaypoint {
 pub enum SafeNextStatesError {
     /// An incorreect number of agents were added
     NumberOfAgentsNotMatching,
-    /// The semantic state is incorrect.
+    /// The semantic state is incorrect. Probably the same agent is reporting state twice.
     InvalidSemanticState,
+    /// Agent was not found. Probably a different agent was reporting stete at different times.
+    AgentNotFound,
     /// Report a bug if this ever ever crops up
     InternalStateMisMatch,
 }
@@ -71,49 +73,68 @@ impl SemanticPlan {
         to_vals.push(*before_id);
     }
 
-    /// Given a Semantic State Estimate, determine the suitable next actions.
+    /// Given a Semantic State Estimate, determine if its safe for the current agent to proceed
     /// The state estimate should consist of each agents semantic waypoint
     /// If there is a mismatch between the number of agents and number of
-    pub fn get_safe_next_actions(
+    pub fn is_safe_to_proceed(
         &self,
         current_state: &Vec<SemanticWaypoint>,
-    ) -> Result<Vec<usize>, SafeNextStatesError> {
+        agent: usize
+    ) -> Result<bool, SafeNextStatesError> {
+        // Lots of O(n^2) behaviour that should really be O(n) or O(1) because our function signature takes current semantic state as a vec
+        // TODO(arjo): add a new CurrentSemanticState struct. Require that it is a sorted vec or structure with correct
         if current_state.len() != self.num_agents {
             return Err(SafeNextStatesError::NumberOfAgentsNotMatching);
         }
 
-        let mut per_agent_marker = HashMap::new();
-        let mut per_agent_next_states = HashMap::new();
-        for state in current_state {
-            per_agent_marker.insert(state.agent, state.trajectory_index);
-            let Some(id) = self.agent_time_to_wp_id.get(state) else {
-                return Err(SafeNextStatesError::InvalidSemanticState);
-            };
-            let Some(next_state) = self.next_states.get(&id) else {
-                return Err(SafeNextStatesError::InternalStateMisMatch);
-            };
-            per_agent_next_states.insert(state.agent, next_state);
+        // Get the agents current waypoint
+        let agent_curr_waypoint: Vec<_>  = current_state.iter().filter(|x| x.agent == agent).collect();
+        if(agent_curr_waypoint.len() > 1) {
+            return Err(SafeNextStatesError::InvalidSemanticState);
+        }
+        if(agent_curr_waypoint.len() < 1) {
+            return Err(SafeNextStatesError::AgentNotFound);
         }
 
-        let iter = per_agent_next_states
-            .iter()
-            .filter(|(_, to_check)| {
-                to_check
-                    .iter()
-                    .map(|u| {
-                        let u = *u;
-                        let desired_state = self.waypoints[u];
-                        let Some(agent_index) = per_agent_marker.get(&u) else {
-                            return false;
-                        };
+        // Try to get the next waypoint for the agent
+        let Some(agent_next_waypoint) = self.get_next_for_agent(&agent_curr_waypoint[0]) else {
+            println!("Reached endpoint for {:?}", agent);
+            return Ok(false);
+        };
 
-                        *agent_index > desired_state.trajectory_index
-                    })
-                    .all(|p| p)
-            })
-            .map(|(k, _)| *k);
+        // Find out what dependencies the waypoint should come after
+        let Some(waypoints_that_should_have_been_crossed) = self.comes_before(&agent_next_waypoint) else {
+            return Err(SafeNextStatesError::InternalStateMisMatch)
+        };
 
-        Ok(iter.collect())
+        let waypoints_that_should_have_been_crossed = waypoints_that_should_have_been_crossed.iter().map(|wp_id| {
+            self.waypoints[*wp_id]
+        });
+
+        // Now for each waypoint find out if the other robot has crossed it
+        let res: Vec<_> = waypoints_that_should_have_been_crossed.filter(|wp| {
+            let agent_to_check = wp.agent;
+            let agent_curr_loc: Vec<_> = current_state.iter().filter(|x| x.agent == agent_to_check).collect();
+            if(agent_curr_loc.len() > 1) {
+                panic!("malformed")
+            }
+            if(agent_curr_loc.len() < 1) {
+                panic!("Made-up agent")
+            }
+            if(agent_curr_loc[0].trajectory_index < wp.trajectory_index ) {
+                return true;
+            }
+            return false;
+        }).collect();
+
+
+        Ok(res.len() == 0)
+    }
+
+    fn get_next_for_agent(&self, waypoint: &SemanticWaypoint) -> Option<SemanticWaypoint> {
+        let mut waypoint = waypoint.clone();
+        waypoint.trajectory_index += 1;
+        self.agent_time_to_wp_id.get(&waypoint).map(|p| self.waypoints[*p])
     }
 
     /// Check which waypoints should come before the given waypoint
@@ -121,7 +142,8 @@ impl SemanticPlan {
         let Some(waypoint_id) = self.agent_time_to_wp_id.get(waypoint) else {
             return None;
         };
-        self.comes_after_all_of.get(waypoint_id)
+
+        self.comes_after_all_of.get(&waypoint_id)
     }
 
 
@@ -271,6 +293,8 @@ pub fn mapf_post(mapf_result: MapfResult) -> SemanticPlan {
             });
 
             if trajectory_index < 1 {
+                semantic_plan.comes_after_all_of.insert(
+                    semantic_plan.waypoints.len() - 1, vec![]);
                 continue;
             }
             semantic_plan.comes_after_all_of.insert(
