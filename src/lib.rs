@@ -99,7 +99,6 @@ impl SemanticPlan {
 
         // Try to get the next waypoint for the agent
         let Some(agent_next_waypoint) = self.get_next_for_agent(agent_curr_waypoint[0]) else {
-            println!("Reached endpoint for {:?}", agent);
             return Ok(false);
         };
 
@@ -203,6 +202,7 @@ impl SemanticPlan {
 }
 
 /// Pose Trajectory
+#[derive(Debug, Clone)]
 pub struct Trajectory {
     pub poses: Vec<Isometry2<f32>>,
 }
@@ -217,6 +217,7 @@ impl Trajectory {
 /// The trajectories are time discretized, and the
 /// footprints are the shapes of the agents.
 /// We expect all trajectories to be of the same length.
+#[derive(Clone)]
 pub struct MapfResult {
     /// The trajectories of the agents
     pub trajectories: Vec<Trajectory>,
@@ -224,6 +225,15 @@ pub struct MapfResult {
     pub footprints: Vec<Arc<dyn Shape>>,
     /// The time discretization of the trajectories
     pub discretization_timestep: f32,
+}
+
+impl std::fmt::Debug for MapfResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MapfResult")
+            .field("trajectories", &self.trajectories)
+            .field("discretization_timestep", &self.discretization_timestep)
+            .finish()
+    }
 }
 
 fn calculate_nonlinear_rigid_motion(
