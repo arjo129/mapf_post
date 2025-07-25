@@ -73,6 +73,66 @@ impl SemanticPlan {
         to_vals.push(*before_id);
     }
 
+    pub fn movement_priorities(&self, current_state: &Vec<SemanticWaypoint>) -> Vec<usize> {
+        // Lots of O(n^2) behaviour that should really be O(n) or O(1) because our function signature takes current semantic state as a vec
+        // TODO(arjo): add a new CurrentSemanticState struct. Require that it is a sorted vec or structure with correct
+        if current_state.len() != self.num_agents {
+            return Err(SafeNextStatesError::NumberOfAgentsNotMatching);
+        }
+
+        // Get the agents current waypoint
+        let agent_curr_waypoint: Vec<_> =
+            current_state.iter().filter(|x| x.agent == agent).collect();
+        if agent_curr_waypoint.len() > 1 {
+            return Err(SafeNextStatesError::InvalidSemanticState);
+        }
+        if agent_curr_waypoint.is_empty() {
+            return Err(SafeNextStatesError::AgentNotFound);
+        }
+
+        // Try to get the next waypoint for the agent
+        let Some(agent_next_waypoint) = self.get_next_for_agent(agent_curr_waypoint[0]) else {
+            return Ok(false);
+        };
+
+        // Find out what dependencies the waypoint should come after
+        let Some(waypoints_that_should_have_been_crossed) = self.comes_before(&agent_next_waypoint)
+        else {
+            return Err(SafeNextStatesError::InternalStateMisMatch);
+        };
+
+        let waypoints_that_should_have_been_crossed = waypoints_that_should_have_been_crossed
+            .iter()
+            .map(|wp_id| self.waypoints[*wp_id]);
+
+        // Now for each waypoint find out if the other robot has crossed it
+        let res: Vec<_> = waypoints_that_should_have_been_crossed
+            .filter(|wp| {
+                let agent_to_check = wp.agent;
+                let agent_curr_loc: Vec<_> = current_state
+                    .iter()
+                    .filter(|x| x.agent == agent_to_check)
+                    .collect();
+                if agent_to_check == agent {
+                    return false;
+                }
+                if agent_curr_loc.len() > 1 {
+                    panic!("malformed")
+                }
+                if agent_curr_loc.is_empty() {
+                    panic!("Made-up agent")
+                }
+                if agent_curr_loc[0].trajectory_index <= wp.trajectory_index {
+                    return true;
+                }
+                false
+            })
+            .collect();
+
+        // TODO(arjoc): Implement toposort based on dependencies
+        vec![]
+    }
+
     /// Given a Semantic State Estimate, determine if its safe for the current agent to proceed
     /// The state estimate should consist of each agents semantic waypoint
     /// If there is a mismatch between the number of agents and number of
@@ -108,12 +168,12 @@ impl SemanticPlan {
             return Err(SafeNextStatesError::InternalStateMisMatch);
         };
 
-        let waypoints_that_should_have_been_crossed: Vec<_> = waypoints_that_should_have_been_crossed
+        let waypoints_that_should_have_been_crossed = waypoints_that_should_have_been_crossed
             .iter()
-            .map(|wp_id| self.waypoints[*wp_id]).collect();
+            .map(|wp_id| self.waypoints[*wp_id]);
 
         // Now for each waypoint find out if the other robot has crossed it
-        let res: Vec<_> = waypoints_that_should_have_been_crossed.iter()
+        let res = waypoints_that_should_have_been_crossed
             .filter(|wp| {
                 let agent_to_check = wp.agent;
                 let agent_curr_loc: Vec<_> = current_state
@@ -134,10 +194,9 @@ impl SemanticPlan {
                 }
                 false
             })
-            .collect();
+            .count();
 
-
-        Ok(res.is_empty())
+        Ok(res == 0)
     }
 
     fn get_next_for_agent(&self, waypoint: &SemanticWaypoint) -> Option<SemanticWaypoint> {
