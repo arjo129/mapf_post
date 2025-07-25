@@ -108,30 +108,34 @@ impl SemanticPlan {
             return Err(SafeNextStatesError::InternalStateMisMatch);
         };
 
-        let waypoints_that_should_have_been_crossed = waypoints_that_should_have_been_crossed
+        let waypoints_that_should_have_been_crossed: Vec<_> = waypoints_that_should_have_been_crossed
             .iter()
-            .map(|wp_id| self.waypoints[*wp_id]);
+            .map(|wp_id| self.waypoints[*wp_id]).collect();
 
         // Now for each waypoint find out if the other robot has crossed it
-        let res: Vec<_> = waypoints_that_should_have_been_crossed
+        let res: Vec<_> = waypoints_that_should_have_been_crossed.iter()
             .filter(|wp| {
                 let agent_to_check = wp.agent;
                 let agent_curr_loc: Vec<_> = current_state
                     .iter()
                     .filter(|x| x.agent == agent_to_check)
                     .collect();
+                if agent_to_check == agent {
+                    return false;
+                }
                 if agent_curr_loc.len() > 1 {
                     panic!("malformed")
                 }
                 if agent_curr_loc.is_empty() {
                     panic!("Made-up agent")
                 }
-                if agent_curr_loc[0].trajectory_index < wp.trajectory_index {
+                if agent_curr_loc[0].trajectory_index <= wp.trajectory_index {
                     return true;
                 }
                 false
             })
             .collect();
+
 
         Ok(res.is_empty())
     }
