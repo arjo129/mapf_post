@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::env::current_dir;
 use std::sync::Arc;
 
 use parry2d::na::{Isometry2, Point2};
@@ -73,64 +74,78 @@ impl SemanticPlan {
         to_vals.push(*before_id);
     }
 
-    pub fn movement_priorities(&self, current_state: &Vec<SemanticWaypoint>) -> Vec<usize> {
+    pub fn movement_priorities(
+        &self,
+        current_state: &Vec<SemanticWaypoint>,
+    ) -> Result<Vec<usize>, SafeNextStatesError> {
         // Lots of O(n^2) behaviour that should really be O(n) or O(1) because our function signature takes current semantic state as a vec
         // TODO(arjo): add a new CurrentSemanticState struct. Require that it is a sorted vec or structure with correct
         if current_state.len() != self.num_agents {
             return Err(SafeNextStatesError::NumberOfAgentsNotMatching);
         }
 
-        // Get the agents current waypoint
-        let agent_curr_waypoint: Vec<_> =
-            current_state.iter().filter(|x| x.agent == agent).collect();
-        if agent_curr_waypoint.len() > 1 {
-            return Err(SafeNextStatesError::InvalidSemanticState);
+        let mut graph = vec![];
+        let mut agent_priorities = vec![];
+
+        for agent in 0..current_state.len() {
+            // Get the agents current waypoint
+            let agent_curr_waypoint: Vec<_> =
+                current_state.iter().filter(|x| x.agent == agent).collect();
+            if agent_curr_waypoint.len() > 1 {
+                return Err(SafeNextStatesError::InvalidSemanticState);
+            }
+            if agent_curr_waypoint.is_empty() {
+                return Err(SafeNextStatesError::AgentNotFound);
+            }
+
+            // Try to get the next waypoint for the agent
+            let Some(agent_next_waypoint) = self.get_next_for_agent(agent_curr_waypoint[0]) else {
+                // No waypoint found, so we should continue moving forward.
+                agent_priorities.push(agent);
+                continue;
+            };
+
+            // Find out what dependencies the waypoint should come after
+            let Some(waypoints_that_should_have_been_crossed) =
+                self.comes_before(&agent_next_waypoint)
+            else {
+                return Err(SafeNextStatesError::InternalStateMisMatch);
+            };
+
+            let waypoints_that_should_have_been_crossed = waypoints_that_should_have_been_crossed
+                .iter()
+                .map(|wp_id| self.waypoints[*wp_id]);
+
+            // Now for each waypoint find out if the other robot has crossed it
+            let res: Vec<_> = waypoints_that_should_have_been_crossed
+                .filter(|wp| {
+                    let agent_to_check = wp.agent;
+                    let agent_curr_loc: Vec<_> = current_state
+                        .iter()
+                        .filter(|x| x.agent == agent_to_check)
+                        .collect();
+                    if agent_to_check == agent {
+                        return false;
+                    }
+                    if agent_curr_loc.len() > 1 {
+                        panic!("malformed")
+                    }
+                    if agent_curr_loc.is_empty() {
+                        panic!("Made-up agent")
+                    }
+                    if agent_curr_loc[0].trajectory_index <= wp.trajectory_index {
+                        return true;
+                    }
+                    false
+                })
+                .collect();
+            graph.push(res);
         }
-        if agent_curr_waypoint.is_empty() {
-            return Err(SafeNextStatesError::AgentNotFound);
-        }
 
-        // Try to get the next waypoint for the agent
-        let Some(agent_next_waypoint) = self.get_next_for_agent(agent_curr_waypoint[0]) else {
-            return Ok(false);
-        };
-
-        // Find out what dependencies the waypoint should come after
-        let Some(waypoints_that_should_have_been_crossed) = self.comes_before(&agent_next_waypoint)
-        else {
-            return Err(SafeNextStatesError::InternalStateMisMatch);
-        };
-
-        let waypoints_that_should_have_been_crossed = waypoints_that_should_have_been_crossed
-            .iter()
-            .map(|wp_id| self.waypoints[*wp_id]);
-
-        // Now for each waypoint find out if the other robot has crossed it
-        let res: Vec<_> = waypoints_that_should_have_been_crossed
-            .filter(|wp| {
-                let agent_to_check = wp.agent;
-                let agent_curr_loc: Vec<_> = current_state
-                    .iter()
-                    .filter(|x| x.agent == agent_to_check)
-                    .collect();
-                if agent_to_check == agent {
-                    return false;
-                }
-                if agent_curr_loc.len() > 1 {
-                    panic!("malformed")
-                }
-                if agent_curr_loc.is_empty() {
-                    panic!("Made-up agent")
-                }
-                if agent_curr_loc[0].trajectory_index <= wp.trajectory_index {
-                    return true;
-                }
-                false
-            })
-            .collect();
+        println!("{:?}", graph);
 
         // TODO(arjoc): Implement toposort based on dependencies
-        vec![]
+        Ok(vec![])
     }
 
     /// Given a Semantic State Estimate, determine if its safe for the current agent to proceed
@@ -261,6 +276,30 @@ impl SemanticPlan {
         }
         dot.push_str("}\n");
         dot
+    }
+
+    /// A prime leader is an agent
+    fn get_leader_follower_deps(&self)
+    {
+        let mut comes_before: HashMap<usize, Vec<usize>> = HashMap::new();
+
+        for (&node, neighbours) in &self.comes_after_all_of {
+            for neigh in neighbours {
+                if let Some(mut p) = comes_before.get_mut(&neigh) {
+                    p.push(node);
+                }
+                else {
+                    comes_before.insert(*neigh, vec![node]);
+                }
+            }
+        }
+
+        
+    }
+
+    fn graph_cut(&self)
+    {
+
     }
 }
 
@@ -638,5 +677,33 @@ mod tests {
             agent: 1,
             trajectory_index: 1
         }));
+    }
+
+    #[test]
+    fn classify_follower_trajectory() {
+        let follow_result = MapfResult {
+            trajectories: vec![
+                vec![
+                    Isometry2::new(Vector2::new(0.0, 0.0), 0.0),
+                    Isometry2::new(Vector2::new(1.0, 0.0), 0.0),
+                    Isometry2::new(Vector2::new(2.0, 0.0), 0.0),
+                    Isometry2::new(Vector2::new(3.0, 0.0), 0.0),
+                ],
+                vec![
+                    Isometry2::new(Vector2::new(1.0, 0.0), 0.0),
+                    Isometry2::new(Vector2::new(2.0, 0.0), 0.0),
+                    Isometry2::new(Vector2::new(3.0, 0.0), 0.0),
+                    Isometry2::new(Vector2::new(4.0, 0.0), 0.0),
+                ],
+            ]
+            .into_iter()
+            .map(|poses| Trajectory { poses })
+            .collect(),
+            footprints: vec![
+                Arc::new(parry2d::shape::Ball::new(0.49)), // Footprint for agent1
+                Arc::new(parry2d::shape::Ball::new(0.49)), // Footprint for agent2
+            ],
+            discretization_timestep: 1.0,
+        };
     }
 }
