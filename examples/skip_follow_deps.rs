@@ -1,15 +1,17 @@
 use std::sync::Arc;
 
-use mapf_post::mapf_post;
 use mapf_post::na::{Isometry2, Vector2};
 use mapf_post::MapfResult;
 use mapf_post::Trajectory;
+use mapf_post::{mapf_post, SemanticPlan};
 
 pub fn generate_dot_file(mapf_result: MapfResult, output_path: &str) {
     let semantic_plan = mapf_post(mapf_result);
 
     // Generate the DOT representation
     let dot_representation = semantic_plan.to_dot();
+
+    semantic_plan.get_leader_follower_deps();
 
     // Write the DOT representation to the specified file
     std::fs::write(output_path, dot_representation).expect("Unable to write DOT file");
