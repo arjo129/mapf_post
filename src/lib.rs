@@ -279,13 +279,14 @@ impl SemanticPlan {
     }
 
     /// A prime leader is an agent
-    fn get_leader_follower_deps(&self)
+    pub fn get_leader_follower_deps(&self)
     {
         let mut comes_before: HashMap<usize, Vec<usize>> = HashMap::new();
 
         for (&node, neighbours) in &self.comes_after_all_of {
             for neigh in neighbours {
                 if let Some(mut p) = comes_before.get_mut(&neigh) {
+                    println!("Adding {}", node);
                     p.push(node);
                 }
                 else {
@@ -293,14 +294,35 @@ impl SemanticPlan {
                 }
             }
         }
+        let mut node_by_agent: HashMap<usize, Vec<Option<usize>>> = HashMap::new();
+        for node in 0..self.waypoints.len() 
+        {
+            let agent = self.waypoints[node].agent;
+            if let Some(mut p) = node_by_agent.get_mut(&agent) {
+                while self.waypoints[node].trajectory_index >= p.len() {
+                    p.push(None)
+                }
+                p[self.waypoints[node].trajectory_index] = Some(node);
+            }
+            else
+            {
+                let mut p = vec![None; self.waypoints[node].trajectory_index + 1];
+                p[self.waypoints[node].trajectory_index] = Some(node);
+                node_by_agent.insert(agent, p);
+            }
+        }
 
-        
+        for (agent, trajectory) in node_by_agent {
+            for node_id in trajectory {
+                if agent == 0 {
+                    if let Some(p)= comes_before.get(&agent) {
+                        println!("Agent 0, node {:?}, must be after all of: {:?}", node_id, p);                    
+                    }
+                } 
+            }
+        } 
     }
 
-    fn graph_cut(&self)
-    {
-
-    }
 }
 
 /// Pose Trajectory
@@ -677,6 +699,11 @@ mod tests {
             agent: 1,
             trajectory_index: 1
         }));
+    }
+
+    #[test]
+    fn test_is_safe(){
+        
     }
 
     #[test]
