@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::env::current_dir;
 use std::sync::Arc;
 
+use nalgebra::Point;
 use parry2d::na::{Isometry2, Point2};
 use parry2d::query::cast_shapes_nonlinear;
 use parry2d::query::{NonlinearRigidMotion, ShapeCastStatus};
@@ -284,8 +285,7 @@ impl SemanticPlan {
 
         for (&node, neighbours) in &self.comes_after_all_of {
             for neigh in neighbours {
-                if let Some(mut p) = comes_before.get_mut(&neigh) {
-                    println!("Adding {}", node);
+                if let Some(p) = comes_before.get_mut(&neigh) {
                     p.push(node);
                 } else {
                     comes_before.insert(*neigh, vec![node]);
@@ -295,7 +295,7 @@ impl SemanticPlan {
         let mut node_by_agent: HashMap<usize, Vec<Option<usize>>> = HashMap::new();
         for node in 0..self.waypoints.len() {
             let agent = self.waypoints[node].agent;
-            if let Some(mut p) = node_by_agent.get_mut(&agent) {
+            if let Some(p) = node_by_agent.get_mut(&agent) {
                 while self.waypoints[node].trajectory_index >= p.len() {
                     p.push(None)
                 }
@@ -307,9 +307,8 @@ impl SemanticPlan {
             }
         }
 
-        for (agent, trajectory) in node_by_agent {
-            let mut potential_follow = hashmap::new();
-            for node_id in trajectory {
+        for (agent, trajectory) in &node_by_agent {
+            for (time, node_id) in trajectory.iter().enumerate() {
                 let Some(node_id) = node_id else {
                     continue;
                 };
@@ -317,29 +316,56 @@ impl SemanticPlan {
                     continue;
                 };
 
-                if agent == 2 {
-                    //if let Some(p) = previous_steps.get(&node_id) {
-                    let mut a: Vec<_> = previous_steps
-                        .iter()
-                        .map(|&v| self.waypoints[v])
-                        .filter(|p| p.agent != agent)
-                        .collect();
+                let a: Vec<_> = previous_steps
+                    .iter()
+                    .map(|&v| self.waypoints[v])
+                    .filter(|p| p.agent != *agent)
+                    .collect();
+
+                let Some(cb) = comes_before.get(&node_id) else {
+                    continue;
+                };
+
+                let p = cb
+                    .iter()
+                    .map(|&v| self.waypoints[v])
+                    .filter(|p| p.agent != *agent)
+                    .collect::<Vec<_>>();
+
+                if p.len() == 0 && a.len() == 0 {
                     println!(
-                        "Agent 1, node {:?}, must be after all of: {:?}",
-                        self.waypoints[node_id], a
+                        "Vicinity Rule Applies for agent {} and t={}",
+                        agent, self.waypoints[*node_id].trajectory_index
                     );
-                    let Some(cb) = comes_before.get(&node_id) else {
+                }
+
+                if trajectory.len() <= time + 1 {
+                    continue;
+                }
+                let Some(next_node) = trajectory[time + 1] else {
+                    continue;
+                };
+                let Some(dependencies) = self.comes_after_all_of.get(&next_node) else {
+                    continue;
+                };
+
+                let mut potential_followers = HashMap::new();
+                for potential in a {
+                    potential_followers.insert(potential.agent, potential.clone());
+                }
+
+                for dependency in dependencies {
+                    let wp = self.waypoints[*dependency];
+                    let Some(wp2) = potential_followers.get(&wp.agent) else {
                         continue;
                     };
 
-                    let p = cb
-                        .iter()
-                        .map(|&v| self.waypoints[v])
-                        .filter(|p| p.agent != agent)
-                        .collect::<Vec<_>>();
-
-                    println!("But Before all of {:?}", p);
-                    //}
+                    if wp.trajectory_index >= wp2.trajectory_index {
+                        println!("{} potentially follows {} at t={}", *agent, wp2.agent, time);
+                        if p.len() == 0 {
+                            println!("{} is also the tail of the pack", *agent);
+                        }
+                    }
                 }
             }
         }
