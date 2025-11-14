@@ -75,80 +75,6 @@ impl SemanticPlan {
         to_vals.push(*before_id);
     }
 
-    pub fn movement_priorities(
-        &self,
-        current_state: &Vec<SemanticWaypoint>,
-    ) -> Result<Vec<usize>, SafeNextStatesError> {
-        // Lots of O(n^2) behaviour that should really be O(n) or O(1) because our function signature takes current semantic state as a vec
-        // TODO(arjo): add a new CurrentSemanticState struct. Require that it is a sorted vec or structure with correct
-        if current_state.len() != self.num_agents {
-            return Err(SafeNextStatesError::NumberOfAgentsNotMatching);
-        }
-
-        let mut graph = vec![];
-        let mut agent_priorities = vec![];
-
-        for agent in 0..current_state.len() {
-            // Get the agents current waypoint
-            let agent_curr_waypoint: Vec<_> =
-                current_state.iter().filter(|x| x.agent == agent).collect();
-            if agent_curr_waypoint.len() > 1 {
-                return Err(SafeNextStatesError::InvalidSemanticState);
-            }
-            if agent_curr_waypoint.is_empty() {
-                return Err(SafeNextStatesError::AgentNotFound);
-            }
-
-            // Try to get the next waypoint for the agent
-            let Some(agent_next_waypoint) = self.get_next_for_agent(agent_curr_waypoint[0]) else {
-                // No waypoint found, so we should continue moving forward.
-                agent_priorities.push(agent);
-                continue;
-            };
-
-            // Find out what dependencies the waypoint should come after
-            let Some(waypoints_that_should_have_been_crossed) =
-                self.comes_before(&agent_next_waypoint)
-            else {
-                return Err(SafeNextStatesError::InternalStateMisMatch);
-            };
-
-            let waypoints_that_should_have_been_crossed = waypoints_that_should_have_been_crossed
-                .iter()
-                .map(|wp_id| self.waypoints[*wp_id]);
-
-            // Now for each waypoint find out if the other robot has crossed it
-            let res: Vec<_> = waypoints_that_should_have_been_crossed
-                .filter(|wp| {
-                    let agent_to_check = wp.agent;
-                    let agent_curr_loc: Vec<_> = current_state
-                        .iter()
-                        .filter(|x| x.agent == agent_to_check)
-                        .collect();
-                    if agent_to_check == agent {
-                        return false;
-                    }
-                    if agent_curr_loc.len() > 1 {
-                        panic!("malformed")
-                    }
-                    if agent_curr_loc.is_empty() {
-                        panic!("Made-up agent")
-                    }
-                    if agent_curr_loc[0].trajectory_index <= wp.trajectory_index {
-                        return true;
-                    }
-                    false
-                })
-                .collect();
-            graph.push(res);
-        }
-
-        println!("{:?}", graph);
-
-        // TODO(arjoc): Implement toposort based on dependencies
-        Ok(vec![])
-    }
-
     /// Given a Semantic State Estimate, determine if its safe for the current agent to proceed
     /// The state estimate should consist of each agents semantic waypoint
     /// If there is a mismatch between the number of agents and number of
@@ -280,8 +206,9 @@ impl SemanticPlan {
     }
 
     /// A prime leader is an agent
-    pub fn get_leader_follower_deps(&self) {
+    pub fn get_leader_follower_deps(&self) -> NodeRelations {
         let mut comes_before: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut node_relations = NodeRelations::new();
 
         for (&node, neighbours) in &self.comes_after_all_of {
             for neigh in neighbours {
@@ -332,11 +259,16 @@ impl SemanticPlan {
                     .filter(|p| p.agent != *agent)
                     .collect::<Vec<_>>();
 
+                let mut vicinity = false;
+
                 if p.len() == 0 && a.len() == 0 {
                     println!(
                         "Vicinity Rule Applies for agent {} and t={}",
                         agent, self.waypoints[*node_id].trajectory_index
                     );
+                    vicinity = true;
+                    node_relations.add_node_relation(*node_id, NodeRelation::Independent);
+                    continue;
                 }
 
                 if trajectory.len() <= time + 1 {
@@ -354,9 +286,13 @@ impl SemanticPlan {
                     potential_followers.insert(potential.agent, potential.clone());
                 }
 
+                let mut follower = false;
+
                 for dependency in dependencies {
                     let wp = self.waypoints[*dependency];
                     let Some(wp2) = potential_followers.get(&wp.agent) else {
+                        node_relations
+                            .add_node_relation(*node_id, NodeRelation::Intersects(wp.clone()));
                         continue;
                     };
 
@@ -364,11 +300,50 @@ impl SemanticPlan {
                         println!("{} potentially follows {} at t={}", *agent, wp2.agent, time);
                         if p.len() == 0 {
                             println!("{} is also the tail of the pack", *agent);
+                            node_relations.add_node_relation(*node_id, NodeRelation::IsTail);
                         }
+                        node_relations
+                            .add_node_relation(*node_id, NodeRelation::Follows(wp.clone()));
+                        follower = true;
                     }
+                }
+                if !vicinity && !follower {
+                    println!("Intersection rules apply");
                 }
             }
         }
+
+        node_relations
+    }
+}
+
+/// Describes the relation between nodes and
+#[derive(Debug, Clone, Copy)]
+enum NodeRelation {
+    Follows(SemanticWaypoint),
+    IsTail,
+    Intersects(SemanticWaypoint),
+    Independent,
+}
+
+/// Node relationships
+#[derive(Debug, Clone)]
+pub struct NodeRelations {
+    nodes: HashMap<usize, Vec<NodeRelation>>,
+}
+
+impl NodeRelations {
+    fn new() -> Self {
+        Self {
+            nodes: HashMap::new(),
+        }
+    }
+
+    fn add_node_relation(&mut self, node: usize, node_relation: NodeRelation) {
+        if let Some(p) = self.nodes.get_mut(&node) {
+            p.push(node_relation);
+        }
+        self.nodes.insert(node, vec![node_relation]);
     }
 }
 
