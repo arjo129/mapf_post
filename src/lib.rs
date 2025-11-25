@@ -1,16 +1,141 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, hash_set};
 use std::env::current_dir;
 use std::sync::Arc;
 
-use nalgebra::Point;
+use nalgebra::{ComplexField, Point};
 use parry2d::na::{Isometry2, Point2};
 use parry2d::query::cast_shapes_nonlinear;
+use parry2d::query::point::PointCompositeShapeProjWithLocationBestFirstVisitor;
 use parry2d::query::{NonlinearRigidMotion, ShapeCastStatus};
 use parry2d::shape::Shape;
 
 pub use parry2d::na;
 pub use parry2d::shape;
+use petgraph::algo::toposort;
+use petgraph::graph::DiGraph;
 
+
+// TODO(arjoc): Move to pure pursuit.
+pub struct WaypointFollower {
+    trajectory: Trajectory,
+    current_pose_on_trajectory: usize,
+    agent_id: usize,
+}
+
+impl WaypointFollower {
+    ///
+    pub fn from_trajectory(agent_id: usize, trajectory: Trajectory) -> Self {
+        Self {
+            trajectory,
+            current_pose_on_trajectory: 0,
+            agent_id,
+        }
+    }
+
+    /// Update position of waypoint follower
+    ///
+    /// This is brittle and should be replaced with a pure-pursuit based variant
+    pub fn update_position_estimate(&mut self, pose: &Isometry2<f32>, uncertainty: f32) {
+        if self.trajectory.poses.len() < self.current_pose_on_trajectory {
+            return;
+        }
+        if (self.trajectory.poses[self.current_pose_on_trajectory + 1]
+            .translation
+            .vector
+            - pose.translation.vector)
+            .norm()
+            < uncertainty
+        {
+            //println!("Pose estimate within bounds");
+            if pose
+                .rotation
+                .angle_to(&self.trajectory.poses[self.current_pose_on_trajectory + 1].rotation)
+                < 0.01
+            {
+                self.current_pose_on_trajectory += 1;
+            }
+        }
+    }
+
+    /// Gives the next waypoint we should consider.
+    pub fn next_waypoint(&mut self) -> Isometry2<f32> {
+        if self.current_pose_on_trajectory + 1 >= self.trajectory.poses.len() {
+            return self.trajectory.poses.last().unwrap().clone();
+        }
+        return self.trajectory.poses[self.current_pose_on_trajectory + 1];
+    }
+
+    fn get_semantic_waypoint(&mut self) -> SemanticWaypoint {
+        SemanticWaypoint {
+            agent: self.agent_id,
+            trajectory_index: self.current_pose_on_trajectory,
+        }
+    }
+}
+
+pub struct Grid2D {
+    static_obstacles: Vec<Vec<bool>>,
+    cell_size: f32
+}
+
+impl Grid2D {
+    pub fn to_world_coords(&self, x: usize, y: usize) -> (f32, f32)
+    {
+        (self.cell_size * x as f32, self.cell_size * y as f32)
+    }
+
+    pub fn from_world_coords(&self, x:f32, y: f32) -> (usize, usize) {
+        ((x / self.cell_size) as usize ,( y / self.cell_size) as usize)
+    }
+
+    pub fn get_partition(&self,
+        plan: &SemanticPlan, current_states: &Vec<SemanticWaypoint>, trajectories: &Vec<Trajectory>) {
+        let p = plan.current_traffic_deps(&current_states);
+        let node_order = toposort(&p, None);
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn test_waypoint_follower() {
+    use parry2d::na::Vector2;
+
+    let mut example_trajectory = Trajectory {
+        poses: vec![
+            Isometry2::new(Vector2::new(0.0, 0.0), 0.0),
+            Isometry2::new(Vector2::new(1.0, 0.0), 0.0),
+            Isometry2::new(Vector2::new(2.0, 0.0), 0.0),
+        ],
+    };
+
+    let mut follower = WaypointFollower::from_trajectory(0, example_trajectory.clone());
+    let next_wp = follower.next_waypoint();
+    assert!((next_wp.translation.x - example_trajectory.poses[1].translation.x).abs() < 0.01);
+    let semantic_pose = follower.get_semantic_waypoint();
+    assert_eq!(semantic_pose.trajectory_index, 0);
+    // Now lets move closer to the target but not reach it.
+    follower.update_position_estimate(&Isometry2::new(Vector2::new(0.1, 0.0), 0.0), 0.1);
+
+    // We should still be at the previous location
+    let next_wp = follower.next_waypoint();
+    assert!((next_wp.translation.x - example_trajectory.poses[1].translation.x).abs() < 0.01);
+    let semantic_pose = follower.get_semantic_waypoint();
+    assert_eq!(semantic_pose.trajectory_index, 0);
+
+    // Lets update our position to the
+    follower.update_position_estimate(&Isometry2::new(Vector2::new(0.95, 0.0), 0.0), 0.1);
+    let next_wp = follower.next_waypoint();
+    assert!((next_wp.translation.x - example_trajectory.poses[2].translation.x).abs() < 0.01);
+    let semantic_pose = follower.get_semantic_waypoint();
+    assert_eq!(semantic_pose.trajectory_index, 1);
+
+    // Lets update our position to the final pose.
+    follower.update_position_estimate(&Isometry2::new(Vector2::new(1.95, 0.0), 0.0), 0.1);
+    let next_wp = follower.next_waypoint();
+    assert!((next_wp.translation.x - example_trajectory.poses[2].translation.x).abs() < 0.01);
+    let semantic_pose = follower.get_semantic_waypoint();
+    assert_eq!(semantic_pose.trajectory_index, 2);
+}
 /// Semantic waypoint
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct SemanticWaypoint {
@@ -156,6 +281,80 @@ impl SemanticPlan {
         };
 
         self.comes_after_all_of.get(waypoint_id)
+    }
+
+    /// Returns a Pet-graph directed graph for further manipulation of the entire
+    /// semantic plan
+    pub fn to_petgraph(&self) -> DiGraph<SemanticWaypoint, ()> {
+        let mut digraph = DiGraph::new();
+        let mut node_index_map = HashMap::new();
+        for waypoint in &self.waypoints {
+            let node_index= digraph.add_node(waypoint.clone());
+            node_index_map.insert(waypoint, node_index.clone());
+        }
+        for (after, befores) in &self.comes_after_all_of {
+            for before in befores {
+                let Some(after) = self.waypoints.get(*after) else {
+                    continue;
+                };
+                let Some(before) = self.waypoints.get(*before) else {
+                    continue;
+                };
+                let Some(&after) = node_index_map.get(after) else {
+                    continue;
+                };
+                let Some(&before) = node_index_map.get(before) else {
+                    continue;
+                };
+                digraph.add_edge(before, after, ());
+            }
+        }
+        return digraph;
+    }
+
+    /// Returns the traffic dependencies at the current time.
+    pub fn current_traffic_deps(&self, current_state: &Vec<SemanticWaypoint>) -> DiGraph<SemanticWaypoint, ()>
+    {
+        let mut max_time_stamp = 0;
+        let mut minimum = HashMap::new();
+        for agent in current_state {
+            max_time_stamp = agent.trajectory_index.max(max_time_stamp);
+            minimum.insert(agent.agent, agent.trajectory_index);
+        }
+
+        let mut digraph = DiGraph::new();
+        let mut node_index_map = HashMap::new();
+        for waypoint in &self.waypoints {
+            let Some(&minimum_wp) = minimum.get(&waypoint.agent) else {
+                continue;
+            };
+            if waypoint.trajectory_index < minimum_wp {
+                continue;
+            }
+            if waypoint.trajectory_index > max_time_stamp {
+                continue;
+            }
+            let node_index= digraph.add_node(waypoint.clone());
+            node_index_map.insert(waypoint, node_index.clone());
+        }
+        for (after, befores) in &self.comes_after_all_of {
+            for before in befores {
+                let Some(after) = self.waypoints.get(*after) else {
+                    continue;
+                };
+                let Some(before) = self.waypoints.get(*before) else {
+                    continue;
+                };
+                let Some(&after) = node_index_map.get(after) else {
+                    continue;
+                };
+                let Some(&before) = node_index_map.get(before) else {
+                    continue;
+                };
+                digraph.add_edge(before, after, ());
+            }
+        }
+        return digraph;
     }
 
     /// Generate a DOT representation of the graph for visualization
@@ -318,7 +517,7 @@ impl SemanticPlan {
 }
 
 /// Describes the relation between nodes and
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 enum NodeRelation {
     Follows(SemanticWaypoint),
     IsTail,
@@ -329,7 +528,7 @@ enum NodeRelation {
 /// Node relationships
 #[derive(Debug, Clone)]
 pub struct NodeRelations {
-    nodes: HashMap<usize, Vec<NodeRelation>>,
+    nodes: HashMap<usize, HashSet<NodeRelation>>,
 }
 
 impl NodeRelations {
@@ -338,12 +537,11 @@ impl NodeRelations {
             nodes: HashMap::new(),
         }
     }
-
     fn add_node_relation(&mut self, node: usize, node_relation: NodeRelation) {
         if let Some(p) = self.nodes.get_mut(&node) {
-            p.push(node_relation);
+            p.insert(node_relation);
         }
-        self.nodes.insert(node, vec![node_relation]);
+        self.nodes.insert(node, HashSet::from_iter([node_relation].iter().cloned()));
     }
 }
 

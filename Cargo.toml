@@ -7,3 +7,4 @@ edition = "2021"
 parry3d = "0.21" # Or parry2d = "0.13" for the 2D version
 parry2d = "0.21"
 nalgebra = "0.32"
+petgraph = "0.8.3"
