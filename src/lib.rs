@@ -1,4 +1,5 @@
-use std::collections::{HashMap, HashSet, hash_set};
+use core::panic;
+use std::collections::{hash_set, HashMap, HashSet};
 use std::env::current_dir;
 use std::sync::Arc;
 
@@ -12,8 +13,8 @@ use parry2d::shape::Shape;
 pub use parry2d::na;
 pub use parry2d::shape;
 use petgraph::algo::toposort;
-use petgraph::graph::DiGraph;
-
+use petgraph::data::Build;
+use petgraph::graph::{node_index, DiGraph};
 
 // TODO(arjoc): Move to pure pursuit.
 pub struct WaypointFollower {
@@ -75,21 +76,24 @@ impl WaypointFollower {
 
 pub struct Grid2D {
     static_obstacles: Vec<Vec<bool>>,
-    cell_size: f32
+    cell_size: f32,
 }
 
 impl Grid2D {
-    pub fn to_world_coords(&self, x: usize, y: usize) -> (f32, f32)
-    {
+    pub fn to_world_coords(&self, x: usize, y: usize) -> (f32, f32) {
         (self.cell_size * x as f32, self.cell_size * y as f32)
     }
 
-    pub fn from_world_coords(&self, x:f32, y: f32) -> (usize, usize) {
-        ((x / self.cell_size) as usize ,( y / self.cell_size) as usize)
+    pub fn from_world_coords(&self, x: f32, y: f32) -> (usize, usize) {
+        ((x / self.cell_size) as usize, (y / self.cell_size) as usize)
     }
 
-    pub fn get_partition(&self,
-        plan: &SemanticPlan, current_states: &Vec<SemanticWaypoint>, trajectories: &Vec<Trajectory>) {
+    pub fn get_partition(
+        &self,
+        plan: &SemanticPlan,
+        current_states: &Vec<SemanticWaypoint>,
+        trajectories: &Vec<Trajectory>,
+    ) {
         let p = plan.current_traffic_deps(&current_states);
         let node_order = toposort(&p, None);
     }
@@ -177,6 +181,23 @@ impl SemanticPlan {
         self.agent_time_to_wp_id
             .insert(*waypoint, self.waypoints.len());
         self.waypoints.push(*waypoint);
+    }
+
+    fn last_time(&self) -> usize {
+        self.waypoints
+            .iter()
+            .map(|wp| wp.trajectory_index)
+            .max()
+            .unwrap_or(0)
+    }
+
+    fn last_time_for_agent(&self, agent: usize) -> usize {
+        self.waypoints
+            .iter()
+            .filter(|wp| wp.agent == agent)
+            .map(|wp| wp.trajectory_index)
+            .max()
+            .unwrap_or(0)
     }
 
     fn requires_comes_after(&mut self, after: &SemanticWaypoint, before: &SemanticWaypoint) {
@@ -289,7 +310,7 @@ impl SemanticPlan {
         let mut digraph = DiGraph::new();
         let mut node_index_map = HashMap::new();
         for waypoint in &self.waypoints {
-            let node_index= digraph.add_node(waypoint.clone());
+            let node_index = digraph.add_node(waypoint.clone());
             node_index_map.insert(waypoint, node_index.clone());
         }
         for (after, befores) in &self.comes_after_all_of {
@@ -313,8 +334,10 @@ impl SemanticPlan {
     }
 
     /// Returns the traffic dependencies at the current time.
-    pub fn current_traffic_deps(&self, current_state: &Vec<SemanticWaypoint>) -> DiGraph<SemanticWaypoint, ()>
-    {
+    pub fn current_traffic_deps(
+        &self,
+        current_state: &Vec<SemanticWaypoint>,
+    ) -> DiGraph<SemanticWaypoint, ()> {
         let mut max_time_stamp = 0;
         let mut minimum = HashMap::new();
         for agent in current_state {
@@ -334,7 +357,7 @@ impl SemanticPlan {
             if waypoint.trajectory_index > max_time_stamp {
                 continue;
             }
-            let node_index= digraph.add_node(waypoint.clone());
+            let node_index = digraph.add_node(waypoint.clone());
             node_index_map.insert(waypoint, node_index.clone());
         }
         for (after, befores) in &self.comes_after_all_of {
@@ -404,144 +427,138 @@ impl SemanticPlan {
         dot
     }
 
-    /// A prime leader is an agent
-    pub fn get_leader_follower_deps(&self) -> NodeRelations {
-        let mut comes_before: HashMap<usize, Vec<usize>> = HashMap::new();
-        let mut node_relations = NodeRelations::new();
-
-        for (&node, neighbours) in &self.comes_after_all_of {
-            for neigh in neighbours {
-                if let Some(p) = comes_before.get_mut(&neigh) {
-                    p.push(node);
-                } else {
-                    comes_before.insert(*neigh, vec![node]);
-                }
-            }
-        }
-        let mut node_by_agent: HashMap<usize, Vec<Option<usize>>> = HashMap::new();
-        for node in 0..self.waypoints.len() {
-            let agent = self.waypoints[node].agent;
-            if let Some(p) = node_by_agent.get_mut(&agent) {
-                while self.waypoints[node].trajectory_index >= p.len() {
-                    p.push(None)
-                }
-                p[self.waypoints[node].trajectory_index] = Some(node);
-            } else {
-                let mut p = vec![None; self.waypoints[node].trajectory_index + 1];
-                p[self.waypoints[node].trajectory_index] = Some(node);
-                node_by_agent.insert(agent, p);
-            }
+    /// Returns if the waypoint is leading someother waypoint
+    pub fn is_follower(&self, waypoint: SemanticWaypoint) -> Vec<SemanticWaypoint> {
+        if waypoint.trajectory_index + 1 >= self.last_time() {
+            // TODO(arjoc) We cant lead when weve reached the end. But we could
+            // be a follower. We need to update the check in a way that supports this behaviour
+            println!("Reached end");
+            return vec![];
         }
 
-        for (agent, trajectory) in &node_by_agent {
-            for (time, node_id) in trajectory.iter().enumerate() {
-                let Some(node_id) = node_id else {
-                    continue;
-                };
-                let Some(previous_steps) = self.comes_after_all_of.get(&node_id) else {
-                    continue;
-                };
+        let mut next_waypoint = waypoint.clone();
+        next_waypoint.trajectory_index += 1;
 
-                let a: Vec<_> = previous_steps
-                    .iter()
-                    .map(|&v| self.waypoints[v])
-                    .filter(|p| p.agent != *agent)
-                    .collect();
+        let Some(wp_id) = self.agent_time_to_wp_id.get(&waypoint) else {
+            return vec![];
+        };
+        let Some(next_wp_id) = self.agent_time_to_wp_id.get(&next_waypoint) else {
+            return vec![];
+        };
 
-                let Some(cb) = comes_before.get(&node_id) else {
-                    continue;
-                };
+        let Some(t_deps) = self.comes_after_all_of.get(wp_id) else {
+            return vec![];
+        };
 
-                let p = cb
-                    .iter()
-                    .map(|&v| self.waypoints[v])
-                    .filter(|p| p.agent != *agent)
-                    .collect::<Vec<_>>();
+        let Some(t_deps_next) = self.comes_after_all_of.get(next_wp_id) else {
+            return vec![];
+        };
 
-                let mut vicinity = false;
+        println!("=====");
 
-                if p.len() == 0 && a.len() == 0 {
-                    println!(
-                        "Vicinity Rule Applies for agent {} and t={}",
-                        agent, self.waypoints[*node_id].trajectory_index
-                    );
-                    vicinity = true;
-                    node_relations.add_node_relation(*node_id, NodeRelation::Independent);
-                    continue;
-                }
+        let mut depends_on = HashMap::new();
+        for potential_follower in t_deps {
+            if self.waypoints[*potential_follower].agent == waypoint.agent {
+                continue;
+            }
 
-                if trajectory.len() <= time + 1 {
-                    continue;
-                }
-                let Some(next_node) = trajectory[time + 1] else {
-                    continue;
-                };
-                let Some(dependencies) = self.comes_after_all_of.get(&next_node) else {
-                    continue;
-                };
+            println!(
+                "Agent {} t={} has dependency on agent {} t={}",
+                waypoint.agent,
+                waypoint.trajectory_index,
+                self.waypoints[*potential_follower].agent,
+                self.waypoints[*potential_follower].trajectory_index
+            );
 
-                let mut potential_followers = HashMap::new();
-                for potential in a {
-                    potential_followers.insert(potential.agent, potential.clone());
-                }
+            let Some(followers) = depends_on.get_mut(&self.waypoints[*potential_follower].agent)
+            else {
+                depends_on.insert(
+                    self.waypoints[*potential_follower].agent,
+                    vec![self.waypoints[*potential_follower].trajectory_index],
+                );
+                continue;
+            };
 
-                let mut follower = false;
+            followers.push(self.waypoints[*potential_follower].trajectory_index);
+        }
 
-                for dependency in dependencies {
-                    let wp = self.waypoints[*dependency];
-                    let Some(wp2) = potential_followers.get(&wp.agent) else {
-                        node_relations
-                            .add_node_relation(*node_id, NodeRelation::Intersects(wp.clone()));
-                        continue;
-                    };
+        let mut next_depends_on = HashMap::new();
+        for potential_follower in t_deps_next {
+            if self.waypoints[*potential_follower].agent == waypoint.agent {
+                continue;
+            }
+            println!(
+                "Agent {} t={} has dependency on agent {} t={}",
+                waypoint.agent,
+                next_waypoint.trajectory_index,
+                self.waypoints[*potential_follower].agent,
+                self.waypoints[*potential_follower].trajectory_index
+            );
 
-                    if wp.trajectory_index >= wp2.trajectory_index {
-                        println!("{} potentially follows {} at t={}", *agent, wp2.agent, time);
-                        if p.len() == 0 {
-                            println!("{} is also the tail of the pack", *agent);
-                            node_relations.add_node_relation(*node_id, NodeRelation::IsTail);
+            let Some(followers) =
+                next_depends_on.get_mut(&self.waypoints[*potential_follower].agent)
+            else {
+                next_depends_on.insert(
+                    self.waypoints[*potential_follower].agent,
+                    vec![self.waypoints[*potential_follower].trajectory_index],
+                );
+                continue;
+            };
+            followers.push(self.waypoints[*potential_follower].trajectory_index);
+        }
+
+        let mut followers = vec![];
+        for (agent, times) in depends_on {
+            let Some(prev_times) = next_depends_on.get(&agent) else {
+                continue;
+            };
+            println!("Got matching agent {:?}", prev_times);
+
+            if times.iter().max() <= prev_times.clone().iter().max() {
+                followers.push(SemanticWaypoint {
+                    agent,
+                    trajectory_index: *times.iter().max().unwrap(),
+                });
+            }
+        }
+
+        followers
+    }
+
+    pub fn figure_out_leader_follower_zone(&self, start: &SemanticWaypoint) {
+        //let mut seen = HashSet::new();
+        for &wp in &self.waypoints {
+            if self.is_follower(wp).len() > 0 {
+                let mut next_latest = wp.clone();
+                let mut follows = self.is_follower(next_latest);
+                let mut graph_id_map = HashMap::new();
+
+                let mut my_graph = DiGraph::new();
+                let mut parent_id = my_graph.add_node(wp.agent);
+                graph_id_map.insert(wp.agent, parent_id);
+                while follows.len() != 0 {
+                    // Figure out who we are following
+                    // follows.
+                    let mut index = 10000000; //TODO(arjoc): Remove
+                    let mut next_agent = 10000000;
+                    for f in follows.iter() {
+                        let child_id = match graph_id_map.get(&f.agent) {
+                            Some(node_id) => *node_id,
+                            None => {
+                                let node_id = my_graph.add_node(f.agent);
+                                graph_id_map.insert(f.agent, node_id);
+                                node_id
+                            }
+                        };
+                        my_graph.add_edge(parent_id, child_id, ());
+                        if f.trajectory_index < index {
+                            index = f.trajectory_index;
+                            next_agent = f.agent;
                         }
-                        node_relations
-                            .add_node_relation(*node_id, NodeRelation::Follows(wp.clone()));
-                        follower = true;
                     }
                 }
-                if !vicinity && !follower {
-                    println!("Intersection rules apply");
-                }
             }
         }
-
-        node_relations
-    }
-}
-
-/// Describes the relation between nodes and
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
-enum NodeRelation {
-    Follows(SemanticWaypoint),
-    IsTail,
-    Intersects(SemanticWaypoint),
-    Independent,
-}
-
-/// Node relationships
-#[derive(Debug, Clone)]
-pub struct NodeRelations {
-    nodes: HashMap<usize, HashSet<NodeRelation>>,
-}
-
-impl NodeRelations {
-    fn new() -> Self {
-        Self {
-            nodes: HashMap::new(),
-        }
-    }
-    fn add_node_relation(&mut self, node: usize, node_relation: NodeRelation) {
-        if let Some(p) = self.nodes.get_mut(&node) {
-            p.insert(node_relation);
-        }
-        self.nodes.insert(node, HashSet::from_iter([node_relation].iter().cloned()));
     }
 }
 
@@ -580,6 +597,7 @@ impl std::fmt::Debug for MapfResult {
     }
 }
 
+/// Sweep the objects to check their motion
 fn calculate_nonlinear_rigid_motion(
     isometry1: &Isometry2<f32>,
     isometry2: &Isometry2<f32>,
@@ -612,7 +630,7 @@ fn calculate_nonlinear_rigid_motion(
     }
 }
 
-/// Mock for now
+/// Check if the robots collide while executing a motion.
 fn collides(
     ti1: &Isometry2<f32>,
     ti2: &Isometry2<f32>,
@@ -691,11 +709,11 @@ pub fn mapf_post(mapf_result: MapfResult) -> SemanticPlan {
                         semantic_plan.requires_comes_after(
                             &SemanticWaypoint {
                                 agent: agent1,
-                                trajectory_index: trajectory_index1,
+                                trajectory_index: trajectory_index1 - 1,
                             },
                             &SemanticWaypoint {
                                 agent: agent2,
-                                trajectory_index: trajectory_index2,
+                                trajectory_index: trajectory_index2 - 1,
                             },
                         );
                     }

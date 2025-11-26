@@ -11,7 +11,7 @@ pub fn generate_dot_file(mapf_result: MapfResult, output_path: &str) {
     // Generate the DOT representation
     let dot_representation = semantic_plan.to_dot();
 
-    semantic_plan.get_leader_follower_deps();
+    //semantic_plan.get_leader_follower_deps();
 
     // Write the DOT representation to the specified file
     std::fs::write(output_path, dot_representation).expect("Unable to write DOT file");

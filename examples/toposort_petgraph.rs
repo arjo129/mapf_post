@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use mapf_post::{SemanticWaypoint, mapf_post};
 use mapf_post::na::{Isometry2, Vector2};
-use mapf_post::MapfResult;
 use mapf_post::Trajectory;
+use mapf_post::{mapf_post, SemanticWaypoint};
+use mapf_post::{MapfResult, SemanticPlan};
 use petgraph::algo::toposort;
 
 pub fn print_sort_order(mapf_result: MapfResult, output_path: &str) {
@@ -14,33 +14,37 @@ pub fn print_sort_order(mapf_result: MapfResult, output_path: &str) {
     let pet_graph = semantic_plan.current_traffic_deps(&vec![
         SemanticWaypoint {
             agent: 0,
-            trajectory_index: 1
+            trajectory_index: 2,
         },
         SemanticWaypoint {
             agent: 1,
-            trajectory_index: 1
+            trajectory_index: 2,
         },
         SemanticWaypoint {
             agent: 2,
-            trajectory_index: 1
-        }
+            trajectory_index: 2,
+        },
     ]);
 
     let indices = toposort(&pet_graph, None).unwrap();
 
     for index in indices {
-        println!("{:?}",pet_graph[index]);
+        println!("{:?}", pet_graph[index]);
     }
 
-    // Write the DOT representation to the specified file
-    //std::fs::write(output_path, dot_representation).expect("Unable to write DOT file");
+    let p = semantic_plan.is_follower(SemanticWaypoint {
+        agent: 0,
+        trajectory_index: 2,
+    });
+
+    println!("{:?}", p);
 }
 
 fn main() {
     // Create a cross junction MapfResult
     let mapf_result = MapfResult {
         trajectories: vec![
-             vec![
+            vec![
                 Isometry2::new(Vector2::new(0.0, 0.0), 0.0),
                 Isometry2::new(Vector2::new(1.0, 0.0), 0.0),
                 Isometry2::new(Vector2::new(2.0, 0.0), 0.0),
