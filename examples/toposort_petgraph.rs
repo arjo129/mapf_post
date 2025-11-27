@@ -37,6 +37,8 @@ pub fn print_sort_order(mapf_result: MapfResult, output_path: &str) {
         trajectory_index: 2,
     });
 
+    semantic_plan.figure_out_leader_follower_zone();
+
     println!("{:?}", p);
 }
 

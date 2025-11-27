@@ -525,37 +525,36 @@ impl SemanticPlan {
         followers
     }
 
-    pub fn figure_out_leader_follower_zone(&self, start: &SemanticWaypoint) {
-        //let mut seen = HashSet::new();
+    pub fn figure_out_leader_follower_zone(&self) {
+        let mut seen = HashSet::new();
         for &wp in &self.waypoints {
-            if self.is_follower(wp).len() > 0 {
-                let mut next_latest = wp.clone();
-                let mut follows = self.is_follower(next_latest);
-                let mut graph_id_map = HashMap::new();
+            if seen.contains(&wp) {
+                continue;
+            }
+            seen.insert(wp);
+            // DFS to get prime leader of cluster
+            let mut stack = vec![wp];
+            let mut parent = HashMap::new();
+            while let Some(potential_follower) = stack.pop() {
+                let potential_leaders = self.is_follower(potential_follower);
+                seen.insert(potential_follower);
+                if potential_leaders.len() == 0 {
+                    // This is a potential leader/follower
+                    // Check if it has the same children in the
+                    if parent.len() == 0 {
+                        // Not Prime Leader. Just a dude hanging around.
+                        continue;
+                    };
+                    println!("{:?} is the prime leader!", potential_follower);
+                }
 
-                let mut my_graph = DiGraph::new();
-                let mut parent_id = my_graph.add_node(wp.agent);
-                graph_id_map.insert(wp.agent, parent_id);
-                while follows.len() != 0 {
-                    // Figure out who we are following
-                    // follows.
-                    let mut index = 10000000; //TODO(arjoc): Remove
-                    let mut next_agent = 10000000;
-                    for f in follows.iter() {
-                        let child_id = match graph_id_map.get(&f.agent) {
-                            Some(node_id) => *node_id,
-                            None => {
-                                let node_id = my_graph.add_node(f.agent);
-                                graph_id_map.insert(f.agent, node_id);
-                                node_id
-                            }
-                        };
-                        my_graph.add_edge(parent_id, child_id, ());
-                        if f.trajectory_index < index {
-                            index = f.trajectory_index;
-                            next_agent = f.agent;
-                        }
-                    }
+                for leader in potential_leaders {
+                    stack.push(leader);
+                    let Some(parent_list) = parent.get_mut(&leader) else {
+                        parent.insert(leader, vec![potential_follower]);
+                        continue;
+                    };
+                    parent_list.push(leader);
                 }
             }
         }
