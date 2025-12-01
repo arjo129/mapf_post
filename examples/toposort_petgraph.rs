@@ -32,7 +32,7 @@ pub fn print_sort_order(mapf_result: MapfResult, output_path: &str) {
         println!("{:?}", pet_graph[index]);
     }
 
-    let p = semantic_plan.is_follower(SemanticWaypoint {
+    let p = semantic_plan.is_follower(&SemanticWaypoint {
         agent: 0,
         trajectory_index: 2,
     });

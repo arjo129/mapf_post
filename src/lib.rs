@@ -13,8 +13,10 @@ use parry2d::shape::Shape;
 pub use parry2d::na;
 pub use parry2d::shape;
 use petgraph::algo::toposort;
+use petgraph::csr::NodeIndex;
 use petgraph::data::Build;
 use petgraph::graph::{node_index, DiGraph};
+use petgraph::visit::{EdgeIndexable, EdgeRef};
 
 // TODO(arjoc): Move to pure pursuit.
 pub struct WaypointFollower {
@@ -427,12 +429,12 @@ impl SemanticPlan {
         dot
     }
 
-    /// Returns if the waypoint is leading someother waypoint
-    pub fn is_follower(&self, waypoint: SemanticWaypoint) -> Vec<SemanticWaypoint> {
-        if waypoint.trajectory_index + 1 >= self.last_time() {
+    /// Returns if the waypoint is participating in a follower behaviour
+    pub fn is_follower(&self, waypoint: &SemanticWaypoint) -> Vec<SemanticWaypoint> {
+        if waypoint.trajectory_index + 1 > self.last_time() {
             // TODO(arjoc) We cant lead when weve reached the end. But we could
             // be a follower. We need to update the check in a way that supports this behaviour
-            println!("Reached end");
+
             return vec![];
         }
 
@@ -454,21 +456,11 @@ impl SemanticPlan {
             return vec![];
         };
 
-        println!("=====");
-
         let mut depends_on = HashMap::new();
         for potential_follower in t_deps {
             if self.waypoints[*potential_follower].agent == waypoint.agent {
                 continue;
             }
-
-            println!(
-                "Agent {} t={} has dependency on agent {} t={}",
-                waypoint.agent,
-                waypoint.trajectory_index,
-                self.waypoints[*potential_follower].agent,
-                self.waypoints[*potential_follower].trajectory_index
-            );
 
             let Some(followers) = depends_on.get_mut(&self.waypoints[*potential_follower].agent)
             else {
@@ -487,13 +479,6 @@ impl SemanticPlan {
             if self.waypoints[*potential_follower].agent == waypoint.agent {
                 continue;
             }
-            println!(
-                "Agent {} t={} has dependency on agent {} t={}",
-                waypoint.agent,
-                next_waypoint.trajectory_index,
-                self.waypoints[*potential_follower].agent,
-                self.waypoints[*potential_follower].trajectory_index
-            );
 
             let Some(followers) =
                 next_depends_on.get_mut(&self.waypoints[*potential_follower].agent)
@@ -512,7 +497,6 @@ impl SemanticPlan {
             let Some(prev_times) = next_depends_on.get(&agent) else {
                 continue;
             };
-            println!("Got matching agent {:?}", prev_times);
 
             if times.iter().max() <= prev_times.clone().iter().max() {
                 followers.push(SemanticWaypoint {
@@ -526,39 +510,111 @@ impl SemanticPlan {
     }
 
     pub fn figure_out_leader_follower_zone(&self) {
-        let mut seen = HashSet::new();
-        for &wp in &self.waypoints {
-            if seen.contains(&wp) {
-                continue;
-            }
-            seen.insert(wp);
-            // DFS to get prime leader of cluster
-            let mut stack = vec![wp];
-            let mut parent = HashMap::new();
-            while let Some(potential_follower) = stack.pop() {
-                let potential_leaders = self.is_follower(potential_follower);
-                seen.insert(potential_follower);
-                if potential_leaders.len() == 0 {
-                    // This is a potential leader/follower
-                    // Check if it has the same children in the
-                    if parent.len() == 0 {
-                        // Not Prime Leader. Just a dude hanging around.
-                        continue;
-                    };
-                    println!("{:?} is the prime leader!", potential_follower);
-                }
+        let mut follow_graph = DiGraph::new();
 
-                for leader in potential_leaders {
-                    stack.push(leader);
-                    let Some(parent_list) = parent.get_mut(&leader) else {
-                        parent.insert(leader, vec![potential_follower]);
-                        continue;
-                    };
-                    parent_list.push(leader);
-                }
+        let mut wp_to_nodeid = HashMap::new();
+        for wp in &self.waypoints {
+            let node_id = follow_graph.add_node(wp.clone());
+            wp_to_nodeid.insert(wp.clone(), node_id);
+        }
+
+        // Determine follower relationship
+        for wp in &self.waypoints {
+            let vec = self.is_follower(wp);
+            for leader in vec {
+                let Some(leader) = wp_to_nodeid.get(&leader) else {
+                    continue;
+                };
+                let Some(follower) = wp_to_nodeid.get(wp) else {
+                    continue;
+                };
+                follow_graph.add_edge(*leader, *follower, ());
             }
         }
+
+        // At each timestep cluster the follower graphs
+        let p = cluster(&follow_graph);
+        let p: Vec<_> = p
+            .iter()
+            .map(|(k, v)| {
+                (
+                    *k,
+                    v.iter()
+                        .map(|node_index| follow_graph[*node_index])
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect();
+
+        let mut wp_to_cluster = HashMap::new();
+        for (cluster_id, agent_waypoints) in &p {
+            for agent_waypoint in agent_waypoints {
+                wp_to_cluster.insert(agent_waypoint, cluster_id);
+            }
+        }
+
+        // Then for each cluster perform a topo-sort and figure out who is the leader
+        for (cluster_id, agent_waypoint) in &p {
+            let mut sub_graph = DiGraph::new();
+            let mut wp_to_nodeid = HashMap::new();
+            for agent_waypoint in agent_waypoint {
+                let node_id = sub_graph.add_node(agent_waypoint.clone());
+                wp_to_nodeid.insert(agent_waypoint.clone(), node_id);
+            }
+
+            for edge in follow_graph.edge_references() {
+                let target = follow_graph[edge.target()];
+                let source = follow_graph[edge.source()];
+
+                let Some(source_id) = wp_to_nodeid.get(&source) else {
+                    continue;
+                };
+
+                let Some(target_id) = wp_to_nodeid.get(&target) else {
+                    continue;
+                };
+
+                sub_graph.add_edge(*source_id, *target_id, ());
+            }
+
+            let ts = toposort(&sub_graph, None);
+            let ts: Vec<_> = ts.unwrap().iter().map(|v| sub_graph[*v]).collect();
+            if ts.len() > 1 {
+                println!("Toposort for local ");
+                println!("Prime leader for cluster {} {:?}", cluster_id, ts);
+            }
+        }
+
+        println!("{:?}", p);
     }
+}
+
+fn cluster(g: &DiGraph<SemanticWaypoint, ()>) -> HashMap<usize, Vec<petgraph::prelude::NodeIndex>> {
+    let mut node_sets = petgraph::unionfind::UnionFind::new(g.node_count());
+    for edge in g.edge_references() {
+        let (a, b) = (edge.source(), edge.target());
+
+        // union the two nodes of the edge
+        node_sets.union(a.index(), b.index());
+    }
+
+    // 4. Organize nodes into clusters (groups) using a HashMap.
+    // The keys will be the canonical set IDs, and values will be lists of nodes in that cluster.
+    let mut clusters = HashMap::new();
+
+    for node_idx in g.node_indices() {
+        let raw_idx = node_idx.index();
+        // Find the canonical root (set ID) for this node
+        let set_id = node_sets.find(raw_idx);
+
+        // Add the node to the corresponding cluster list
+        clusters
+            .entry(set_id)
+            .or_insert_with(Vec::new)
+            .push(node_idx);
+    }
+
+    clusters
 }
 
 /// Pose Trajectory
