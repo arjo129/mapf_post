@@ -1,10 +1,21 @@
 [package]
 name = "mapf_post"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 parry3d = "0.21" # Or parry2d = "0.13" for the 2D version
 parry2d = "0.21"
 nalgebra = "0.32"
 petgraph = "0.8.3"
+macroquad = "0.4.14"
+bresenham = "0.1.1"
+rand = "0.9.2"
+csv = "1.4.0"
+clap = { version = "4.5.53", features = ["derive"] }
+
+[dev-dependencies]
+axum = "0.7.5"
+tokio = { version = "1.38.0", features = ["full"] }
+serde = { version = "1.0.203", features = ["derive"] }
+serde_json = "1.0.120"

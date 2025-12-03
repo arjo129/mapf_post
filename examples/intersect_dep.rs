@@ -6,7 +6,12 @@ use mapf_post::MapfResult;
 use mapf_post::Trajectory;
 
 pub fn generate_dot_file(mapf_result: MapfResult, output_path: &str) {
-    let semantic_plan = mapf_post(mapf_result);
+    let semantic_plan = mapf_post(&mapf_result);
+
+    for p in &semantic_plan.waypoints {
+       println!("{:?}->{:?}", p, semantic_plan.is_follower(p));
+       println!("{:?}, {:?}", p, semantic_plan.is_intersection_participant(p));
+    }
 
     // Generate the DOT representation
     let dot_representation = semantic_plan.to_dot();
