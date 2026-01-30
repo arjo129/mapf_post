@@ -43,7 +43,7 @@ impl WaypointFollower {
     ///
     /// This is brittle and should be replaced with a pure-pursuit based variant
     pub fn update_position_estimate(&mut self, pose: &Isometry2<f32>, uncertainty: f32) {
-        if self.trajectory.poses.len() < self.current_pose_on_trajectory {
+        if self.trajectory.poses.len() < self.current_pose_on_trajectory + 1 {
             return;
         }
         if (self.trajectory.poses[self.current_pose_on_trajectory + 1]
@@ -54,13 +54,13 @@ impl WaypointFollower {
             < uncertainty
         {
             //println!("Pose estimate within bounds");
-            if pose
-                .rotation
-                .angle_to(&self.trajectory.poses[self.current_pose_on_trajectory + 1].rotation)
-                < 0.01
-            {
-                self.current_pose_on_trajectory += 1;
-            }
+            //if pose
+            //    .rotation
+            //    .angle_to(&self.trajectory.poses[self.current_pose_on_trajectory + 1].rotation)
+            //    < 0.4
+            //{
+            self.current_pose_on_trajectory += 1;
+            //}
         }
     }
 
@@ -72,6 +72,17 @@ impl WaypointFollower {
         return self.trajectory.poses[self.current_pose_on_trajectory + 1];
     }
 
+    pub fn remaining_trajectory(&mut self) -> Vec<(f32, f32)> {
+        let mut v = vec![];
+        for p in self.current_pose_on_trajectory + 1..self.trajectory.poses.len() {
+            v.push((
+                self.trajectory.poses[p].translation.x,
+                self.trajectory.poses[p].translation.y,
+            ));
+        }
+        return v;
+    }
+
     /// Returns the current semantic waypoint
     pub fn get_semantic_waypoint(&mut self) -> SemanticWaypoint {
         SemanticWaypoint {
@@ -80,8 +91,6 @@ impl WaypointFollower {
         }
     }
 }
-
-
 
 #[cfg(test)]
 #[test]
@@ -161,7 +170,7 @@ pub struct SemanticPlan {
 }
 
 impl SemanticPlan {
-    fn add_waypoint(&mut self, waypoint: &SemanticWaypoint){
+    fn add_waypoint(&mut self, waypoint: &SemanticWaypoint) {
         self.agent_time_to_wp_id
             .insert(*waypoint, self.waypoints.len());
         self.waypoints.push(*waypoint);
@@ -191,7 +200,8 @@ impl SemanticPlan {
         to_vals.push(*before_id);
 
         let Some(to_vals) = self.potential_successors.get_mut(before_id) else {
-            self.potential_successors.insert(*before_id, vec![*after_id]);
+            self.potential_successors
+                .insert(*before_id, vec![*after_id]);
             return;
         };
         to_vals.push(*after_id);
@@ -310,10 +320,7 @@ impl SemanticPlan {
     }
 
     /// Returns the traffic dependencies at the current time.
-    pub fn get_current_cut(
-        &self,
-        current_state: &Vec<SemanticWaypoint>,
-    ) -> Self {
+    pub fn get_current_cut(&self, current_state: &Vec<SemanticWaypoint>) -> Self {
         let mut max_time_stamp = 0;
 
         // the minimum hashmap contains the lower time bound based on the
@@ -454,7 +461,10 @@ impl SemanticPlan {
     }
 
     /// Check if node participates in intersection.
-    pub fn is_intersection_participant(&self, waypoint: &SemanticWaypoint) -> Option<IntersectionType> {
+    pub fn is_intersection_participant(
+        &self,
+        waypoint: &SemanticWaypoint,
+    ) -> Option<IntersectionType> {
         let Some(wp_id) = self.agent_time_to_wp_id.get(waypoint) else {
             return None;
         };
@@ -620,7 +630,8 @@ impl SemanticPlan {
         let mut cluster_to_leader = HashMap::new();
         let mut leader_to_cluster = HashMap::new();
 
-        let mut allocation_strategy: HashMap<SemanticWaypoint, (AllocationStrategy, usize, usize)> = HashMap::new();
+        let mut allocation_strategy: HashMap<SemanticWaypoint, (AllocationStrategy, usize, usize)> =
+            HashMap::new();
 
         for (cluster_id, agent_waypoint) in &p {
             let mut sub_graph = DiGraph::new();
@@ -653,9 +664,19 @@ impl SemanticPlan {
             {
                 cluster_to_leader.insert(cluster_id, leader);
                 leader_to_cluster.insert(leader, cluster_id);
-                allocation_strategy.insert(ts[0], (AllocationStrategy::Leader(0.0, 0.0),0, *cluster_id));
+                allocation_strategy.insert(
+                    ts[0],
+                    (AllocationStrategy::Leader(0.0, 0.0), 0, *cluster_id),
+                );
                 for i in 1..ts.len() {
-                    allocation_strategy.insert(ts[i], (AllocationStrategy::Follower(ts[i-1].agent),i, *cluster_id));
+                    allocation_strategy.insert(
+                        ts[i],
+                        (
+                            AllocationStrategy::Follower(ts[i - 1].agent),
+                            i,
+                            *cluster_id,
+                        ),
+                    );
                 }
             }
         }
@@ -704,10 +725,10 @@ impl SemanticPlan {
 
             // TODO(arjoc): Dont need a hashmap
             for (_, mut p) in lead_member_buckets {
-                p.sort_by(|&a,&b| {a.trajectory_index.cmp(&b.trajectory_index)});
+                p.sort_by(|&a, &b| a.trajectory_index.cmp(&b.trajectory_index));
 
                 // TODO(arjoc): verify if the lead segment actually needs sorting or a max is sufficient.
-                let Some(&sem_wp) =  p.first() else {
+                let Some(&sem_wp) = p.first() else {
                     continue;
                 };
 
@@ -718,7 +739,9 @@ impl SemanticPlan {
 
                 let mut last_upd = 0;
                 for next_wp in 1..p.len() {
-                    if p[next_wp].trajectory_index-p[next_wp-1].trajectory_index > 1 || next_wp == p.len()-1{
+                    if p[next_wp].trajectory_index - p[next_wp - 1].trajectory_index > 1
+                        || next_wp == p.len() - 1
+                    {
                         let lead_segment = p[next_wp].clone();
                         for id in last_upd..next_wp {
                             allocate_till.insert(p[id].clone(), lead_segment);
@@ -729,17 +752,19 @@ impl SemanticPlan {
             }
         }
 
-
         LeaderFollowerZones {
             allocate_till,
             leader_to_leader_segments,
             leader_segment_to_leader,
             wp_to_cluster,
-            allocation_strategy
+            allocation_strategy,
         }
     }
 
-    pub fn get_claim_dict(&self, current_positions: &Vec<SemanticWaypoint>) -> HashMap<usize, CurrentlyAllocatedTrajSegment>{
+    pub fn get_claim_dict(
+        &self,
+        current_positions: &Vec<SemanticWaypoint>,
+    ) -> HashMap<usize, CurrentlyAllocatedTrajSegment> {
         let mut allocate_till: HashMap<SemanticWaypoint, SemanticWaypoint> = HashMap::new();
 
         let mut agent_to_pos = HashMap::new();
@@ -748,14 +773,12 @@ impl SemanticPlan {
             agent_to_pos.insert(wp.agent, wp);
         }
 
-
         // Claim every waypoint that can be claimed.
         for wp in current_positions {
             let mut new_wp = wp.clone();
             loop {
                 new_wp.trajectory_index += 1;
-                if !self.agent_time_to_wp_id.contains_key(&new_wp)
-                {
+                if !self.agent_time_to_wp_id.contains_key(&new_wp) {
                     break;
                 }
                 let Some(deps) = self.comes_before(&new_wp) else {
@@ -764,7 +787,7 @@ impl SemanticPlan {
                 let mut continue_to_mark = true;
                 for dep in deps {
                     let dep_wp = self.waypoints[*dep];
-                    let Some(other_agent)= agent_to_pos.get(&dep_wp.agent) else {
+                    let Some(other_agent) = agent_to_pos.get(&dep_wp.agent) else {
                         continue;
                     };
 
@@ -782,30 +805,32 @@ impl SemanticPlan {
                     break;
                 }
             }
-            allocate_till.insert(wp.clone(),new_wp);
+            allocate_till.insert(wp.clone(), new_wp);
         }
 
         // Prepare output
         let mut final_reservation_table = HashMap::new();
-        for (start,end) in allocate_till.iter(){
-            final_reservation_table.insert(start.agent, CurrentlyAllocatedTrajSegment {
-                start_id: start.trajectory_index,
-                end_id: end.trajectory_index
-            });
+        for (start, end) in allocate_till.iter() {
+            final_reservation_table.insert(
+                start.agent,
+                CurrentlyAllocatedTrajSegment {
+                    start_id: start.trajectory_index,
+                    end_id: end.trajectory_index,
+                },
+            );
         }
         final_reservation_table
     }
 }
 
-pub struct CurrentlyAllocatedTrajSegment
-{
+pub struct CurrentlyAllocatedTrajSegment {
     pub start_id: usize,
-    pub end_id: usize
+    pub end_id: usize,
 }
 
 pub enum AllocationStrategy {
     Leader(f32, f32), // Clears space till the end of the leader
-    Follower(usize), // Follows x
+    Follower(usize),  // Follows x
     IntersectionLead(usize),
     IntersectionWait(SemanticWaypoint),
     Vicinity,
@@ -816,7 +841,7 @@ pub struct LeaderFollowerZones {
     leader_to_leader_segments: HashMap<SemanticWaypoint, usize>,
     leader_segment_to_leader: HashMap<usize, HashSet<SemanticWaypoint>>,
     wp_to_cluster: HashMap<SemanticWaypoint, usize>,
-    pub(crate) allocation_strategy: HashMap<SemanticWaypoint, (AllocationStrategy, usize, usize)>
+    pub(crate) allocation_strategy: HashMap<SemanticWaypoint, (AllocationStrategy, usize, usize)>,
 }
 
 #[derive(Debug, Clone)]

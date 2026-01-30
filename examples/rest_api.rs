@@ -1,19 +1,21 @@
-use axum::{routing::post, Json, Router, extract::State};
+use axum::{Json, Router, extract::State, routing::post};
+use clap::Parser;
+use core::alloc;
+use csv;
 use mapf_post::spatial_allocation::{CurrentPosition, Grid2D};
 use serde::{Deserialize, Serialize};
-use core::alloc;
+use std::collections::HashMap;
 use std::error::Error;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
-use csv;
-use clap::Parser;
 
+use axum::serve;
 use mapf_post::na::{Isometry2, Vector2};
-use mapf_post::{MapfResult, Trajectory, SemanticWaypoint, WaypointFollower, mapf_post, SemanticPlan};
+use mapf_post::{
+    MapfResult, SemanticPlan, SemanticWaypoint, Trajectory, WaypointFollower, mapf_post,
+};
 use parry2d::shape::Shape;
 use tokio::net::TcpListener;
-use axum::serve;
 
 #[derive(Parser)]
 #[clap(version = "1.0", author = "Arjo Chakravarty")]
@@ -36,7 +38,8 @@ pub struct AgentAllocationResponse {
     pub agent_id: usize,
     pub cell_size: f32,
     pub allocated_free_space: Vec<(f32, f32)>,
-    pub next_goal: (f32, f32)
+    pub next_goal: (f32, f32),
+    pub remaining_traj: Vec<(f32, f32)>,
 }
 
 // --- Server State ---
@@ -58,16 +61,19 @@ async fn main() {
             Ok(result) => {
                 println!("Loaded trajectories from CSV: {}", path);
                 result
-            },
+            }
             Err(e) => {
-                eprintln!("Error loading CSV from {}: {}. Using default trajectories.", path, e);
+                eprintln!(
+                    "Error loading CSV from {}: {}. Using default trajectories.",
+                    path, e
+                );
                 generate_default_mapf_result()
             }
         },
         None => {
             println!("No CSV path provided. Using default trajectories.");
             generate_default_mapf_result()
-        },
+        }
     });
 
     let semantic_plan = Arc::new(mapf_post(&mapf_result));
@@ -77,8 +83,14 @@ async fn main() {
     for (i, trajectory) in mapf_result.trajectories.iter().enumerate() {
         followers.insert(i, WaypointFollower::from_trajectory(i, trajectory.clone()));
         current_wp.push(CurrentPosition {
-            semantic_position: SemanticWaypoint { agent: i, trajectory_index: 0 },
-            real_position: (trajectory.poses[0].translation.x, trajectory.poses[0].translation.y)
+            semantic_position: SemanticWaypoint {
+                agent: i,
+                trajectory_index: 0,
+            },
+            real_position: (
+                trajectory.poses[0].translation.x,
+                trajectory.poses[0].translation.y,
+            ),
         });
     }
 
@@ -87,7 +99,7 @@ async fn main() {
         semantic_plan: semantic_plan.clone(),
         grid: Arc::new(Grid2D::new(vec![vec![0; 20]; 20], 1.0)), //TODO load  from occupancy grid
         waypoint_followers: Arc::new(Mutex::new(followers)),
-        current_wp: Arc::new(Mutex::new(current_wp))
+        current_wp: Arc::new(Mutex::new(current_wp)),
     });
 
     // --- Axum Router ---
@@ -109,46 +121,59 @@ async fn update_pose(
     let mut followers = app_state.waypoint_followers.lock().unwrap();
 
     let agent_id = payload.agent_id;
-    let uncertainty = 0.1; // Example uncertainty value
+    let uncertainty = 0.5; // Example uncertainty value
 
     println!("Received pose {:?}", payload);
 
     // 1. Update the waypoint follower for the specific agent
     let current_pose = Isometry2::new(Vector2::new(payload.x, payload.y), payload.angle);
     let Some(follower) = followers.get_mut(&agent_id) else {
-        return  Json(AgentAllocationResponse {
+        return Json(AgentAllocationResponse {
             agent_id,
             cell_size: 1.0,
             allocated_free_space: vec![],
-            next_goal: (payload.x, payload.y)
+            next_goal: (payload.x, payload.y),
+            remaining_traj: vec![],
         });
     };
     follower.update_position_estimate(&current_pose, uncertainty);
-
 
     // Update internal position state
     let mut current_pos = app_state.current_wp.lock().unwrap();
     current_pos[agent_id] = CurrentPosition {
         semantic_position: follower.get_semantic_waypoint(),
-        real_position: (payload.x, payload.y)
+        real_position: (payload.x, payload.y),
     };
 
     // TODO(arjoc)
-    let allocation_field = app_state.grid.allocate_trajectory(&app_state.mapf_result, &current_pos);
+    let allocation_field = app_state
+        .grid
+        .allocate_trajectory(&app_state.mapf_result, &current_pos);
     if let Some(cells) = allocation_field.get_alloc_for_agent(agent_id) {
-        Json(AgentAllocationResponse {
+        let mut traj = vec![(payload.x, payload.y)];
+        traj.extend(follower.remaining_trajectory());
+        let p = Json(AgentAllocationResponse {
             agent_id,
             cell_size: 1.0,
-            allocated_free_space: cells.iter().map(|&(x,y)| app_state.grid.to_world_coords(x as isize, y as isize)).collect(),
-            next_goal: (follower.next_waypoint().translation.x, follower.next_waypoint().translation.y)
-        })
-    }
-    else {
+            allocated_free_space: cells
+                .iter()
+                .map(|&(x, y)| app_state.grid.to_world_coords(x as isize, y as isize))
+                .collect(),
+            next_goal: (
+                follower.next_waypoint().translation.x,
+                follower.next_waypoint().translation.y,
+            ),
+            remaining_traj: traj,
+        });
+        println!("{:?}", p);
+        p
+    } else {
         Json(AgentAllocationResponse {
             agent_id,
             cell_size: 0.0,
             allocated_free_space: vec![],
-            next_goal: (payload.x, payload.y)
+            next_goal: (payload.x, payload.y),
+            remaining_traj: vec![],
         })
     }
 }
@@ -160,14 +185,18 @@ fn load_trajectories_from_csv(path: &str) -> Result<MapfResult, Box<dyn Error>> 
     let headers = reader.headers()?.clone();
     let num_agents = headers.len() / 2;
 
-    let mut trajectories: Vec<Trajectory> = (0..num_agents).map(|_| Trajectory { poses: vec![] }).collect();
+    let mut trajectories: Vec<Trajectory> = (0..num_agents)
+        .map(|_| Trajectory { poses: vec![] })
+        .collect();
 
     for result in reader.records() {
         let record = result?;
         for i in 0..num_agents {
             let x: f64 = record[i * 2].parse()?;
             let y: f64 = record[i * 2 + 1].parse()?;
-            trajectories[i].poses.push(Isometry2::new(Vector2::new(x as f32, y as f32), 0.0));
+            trajectories[i]
+                .poses
+                .push(Isometry2::new(Vector2::new(x as f32, y as f32), 0.0));
         }
     }
 
