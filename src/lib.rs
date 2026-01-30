@@ -39,29 +39,56 @@ impl WaypointFollower {
         }
     }
 
-    /// Update position of waypoint follower
+    /// Update position of waypoint follower by finding the closest point on the trajectory.
     ///
-    /// This is brittle and should be replaced with a pure-pursuit based variant
-    pub fn update_position_estimate(&mut self, pose: &Isometry2<f32>, uncertainty: f32) {
-        if self.trajectory.poses.len() < self.current_pose_on_trajectory + 1 {
+    /// This avoids getting stuck if a waypoint is missed, by projecting the robot's position
+    /// onto the trajectory segments.
+    pub fn update_position_estimate(&mut self, pose: &Isometry2<f32>, _uncertainty: f32) {
+        if self.current_pose_on_trajectory >= self.trajectory.poses.len().saturating_sub(1) {
             return;
         }
-        if (self.trajectory.poses[self.current_pose_on_trajectory + 1]
-            .translation
-            .vector
-            - pose.translation.vector)
-            .norm()
-            < uncertainty
-        {
-            //println!("Pose estimate within bounds");
-            //if pose
-            //    .rotation
-            //    .angle_to(&self.trajectory.poses[self.current_pose_on_trajectory + 1].rotation)
-            //    < 0.4
-            //{
-            self.current_pose_on_trajectory += 1;
-            //}
+
+        let robot_pos = Point2::from(pose.translation.vector);
+
+        let mut closest_dist_sq = f32::MAX;
+        let mut best_segment_start_idx = self.current_pose_on_trajectory;
+
+        // Iterate from the current segment onwards to find the closest segment.
+        // This prevents the follower from going backwards along the trajectory.
+        for i in self.current_pose_on_trajectory..self.trajectory.poses.len().saturating_sub(1) {
+            let p1 = Point2::from(self.trajectory.poses[i].translation.vector);
+            let p2 = Point2::from(self.trajectory.poses[i + 1].translation.vector);
+            let segment_vec = p2 - p1;
+            let robot_to_p1 = robot_pos - p1;
+
+            let t = if segment_vec.norm_squared() > 1e-6 {
+                (robot_to_p1.dot(&segment_vec)) / segment_vec.norm_squared()
+            } else {
+                0.0 // Handle zero-length segments
+            };
+
+            let closest_point_on_segment = if t < 0.0 {
+                p1
+            } else if t > 1.0 {
+                p2
+            } else {
+                p1 + t * segment_vec
+            };
+
+            let dist_sq = na::distance_squared(&robot_pos, &closest_point_on_segment);
+
+            if dist_sq < closest_dist_sq {
+                closest_dist_sq = dist_sq;
+
+                // If the robot is at or past the end of the segment, it has passed this segment's start waypoint.
+                if t >= 1.0 {
+                    best_segment_start_idx = i + 1;
+                } else {
+                    best_segment_start_idx = i;
+                }
+            }
         }
+        self.current_pose_on_trajectory = best_segment_start_idx;
     }
 
     /// Gives the next waypoint we should consider.
@@ -119,15 +146,29 @@ fn test_waypoint_follower() {
     let semantic_pose = follower.get_semantic_waypoint();
     assert_eq!(semantic_pose.trajectory_index, 0);
 
-    // Lets update our position to the
+    // Lets update our position to be close to the next waypoint, but not past it.
     follower.update_position_estimate(&Isometry2::new(Vector2::new(0.95, 0.0), 0.0), 0.1);
+    let next_wp = follower.next_waypoint();
+    assert!((next_wp.translation.x - example_trajectory.poses[1].translation.x).abs() < 0.01);
+    let semantic_pose = follower.get_semantic_waypoint();
+    assert_eq!(semantic_pose.trajectory_index, 0);
+
+    // Let's reach the next waypoint.
+    follower.update_position_estimate(&Isometry2::new(Vector2::new(1.0, 0.0), 0.0), 0.1);
     let next_wp = follower.next_waypoint();
     assert!((next_wp.translation.x - example_trajectory.poses[2].translation.x).abs() < 0.01);
     let semantic_pose = follower.get_semantic_waypoint();
     assert_eq!(semantic_pose.trajectory_index, 1);
 
-    // Lets update our position to the final pose.
+    // Lets update our position to be close to the final pose.
     follower.update_position_estimate(&Isometry2::new(Vector2::new(1.95, 0.0), 0.0), 0.1);
+    let next_wp = follower.next_waypoint();
+    assert!((next_wp.translation.x - example_trajectory.poses[2].translation.x).abs() < 0.01);
+    let semantic_pose = follower.get_semantic_waypoint();
+    assert_eq!(semantic_pose.trajectory_index, 1);
+
+    // Let's reach the final pose
+    follower.update_position_estimate(&Isometry2::new(Vector2::new(2.0, 0.0), 0.0), 0.1);
     let next_wp = follower.next_waypoint();
     assert!((next_wp.translation.x - example_trajectory.poses[2].translation.x).abs() < 0.01);
     let semantic_pose = follower.get_semantic_waypoint();
@@ -1231,7 +1272,7 @@ mod tests {
         };
 
         // Generate the semantic plan
-        let semantic_plan = mapf_post(mapf_result);
+        let semantic_plan = mapf_post(&mapf_result);
         // Check the number of waypoints
         assert_eq!(semantic_plan.waypoints.len(), 8); // 4 for each agent
         let res = semantic_plan

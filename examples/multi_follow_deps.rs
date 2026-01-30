@@ -6,7 +6,7 @@ use mapf_post::MapfResult;
 use mapf_post::Trajectory;
 
 pub fn generate_dot_file(mapf_result: MapfResult, output_path: &str) {
-    let semantic_plan = mapf_post(mapf_result);
+    let semantic_plan = mapf_post(&mapf_result);
 
     // Generate the DOT representation
     let dot_representation = semantic_plan.to_dot();
