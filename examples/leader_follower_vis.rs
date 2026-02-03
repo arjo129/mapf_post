@@ -232,7 +232,7 @@ async fn main() {
             "Time Step: 0".to_string()
         };
         draw_text(&time_step_text, 20.0, 20.0, 30.0, BLACK);
-
+        println!("{} ---", time_step_text);
         next_frame().await
     }
 }

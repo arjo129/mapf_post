@@ -3,6 +3,7 @@ use clap::Parser;
 use core::alloc;
 use csv;
 use mapf_post::spatial_allocation::{CurrentPosition, Grid2D};
+use rand::seq::IndexedRandom;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
@@ -145,13 +146,21 @@ async fn update_pose(
         real_position: (payload.x, payload.y),
     };
 
+    let mut v_current_pos = vec![];
+    for id in 0..current_pos.len() {
+        v_current_pos.push(current_pos[id].semantic_position.clone());
+    }
+    let safe_claims = app_state.semantic_plan.get_claim_dict(&v_current_pos);
+
     // TODO(arjoc)
     let allocation_field = app_state
         .grid
         .allocate_trajectory(&app_state.mapf_result, &current_pos);
     if let Some(cells) = allocation_field.get_alloc_for_agent(agent_id) {
         let mut traj = vec![(payload.x, payload.y)];
-        traj.extend(follower.remaining_trajectory());
+        traj.extend(
+            follower.remaining_safe_trajectory_segment(safe_claims.get(&agent_id).unwrap()),
+        );
         let p = Json(AgentAllocationResponse {
             agent_id,
             cell_size: 1.0,

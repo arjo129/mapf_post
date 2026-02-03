@@ -4,12 +4,14 @@ use std::collections::{HashMap, HashSet};
 use bresenham::Bresenham;
 use parry2d::na::max;
 
-use crate::{IntersectionType, LeaderFollowerZones, MapfResult, SemanticPlan, SemanticWaypoint, mapf_post};
+use crate::{
+    IntersectionType, LeaderFollowerZones, MapfResult, SemanticPlan, SemanticWaypoint, mapf_post,
+};
 
 #[derive(Clone)]
 pub struct CurrentPosition {
     pub semantic_position: SemanticWaypoint,
-    pub real_position: (f32, f32)
+    pub real_position: (f32, f32),
 }
 #[derive(Clone)]
 pub struct Grid2D {
@@ -22,7 +24,11 @@ pub struct Grid2D {
 impl Grid2D {
     pub fn new(static_obstacles: Vec<Vec<i8>>, cell_size: f32) -> Self {
         let width = static_obstacles.len();
-        let height = if width > 0 { static_obstacles[0].len() } else { 0 };
+        let height = if width > 0 {
+            static_obstacles[0].len()
+        } else {
+            0
+        };
         Self {
             static_obstacles,
             cell_size,
@@ -45,75 +51,98 @@ impl Grid2D {
         )
     }
 
-    pub fn allocate_trajectory(&self, trajectories: &MapfResult, positions: &Vec<CurrentPosition>) -> AllocationField
-    {
+    pub fn allocate_trajectory(
+        &self,
+        trajectories: &MapfResult,
+        positions: &Vec<CurrentPosition>,
+    ) -> AllocationField {
         let semantic_plan = mapf_post(trajectories);
         let semantic_positions = positions.iter().map(|p| p.semantic_position).collect();
         let assignment = semantic_plan.get_claim_dict(&semantic_positions);
 
-        let mut allocation_field= AllocationField::create(semantic_plan, 1000, 1000);
+        let mut allocation_field = AllocationField::create(semantic_plan, 1000, 1000);
 
         for (agent, traj) in trajectories.trajectories.iter().enumerate() {
             let Some(region) = assignment.get(&agent) else {
                 panic!("Unknown Agent - something went wrong in get_claim_dict");
             };
-            for i in region.start_id..region.end_id+1
-            {
+            for i in region.start_id..region.end_id + 1 {
                 if i >= traj.poses.len() {
                     continue;
                 }
 
                 //TODO(arjoc) Add a function parameter getting robot's current real position when i = start_id
                 let start_pose = traj.poses[i];
-                let start_coords = self.from_world_coords(start_pose.translation.x, start_pose.translation.y);
-                allocation_field.mark(start_coords.0, start_coords.1, &TrajectoryAllocation {
-                    agent, priority: i, dist_from_center: 0.0 });
-                /*self.blur(&TrajectoryAllocation {
+                let start_coords =
+                    self.from_world_coords(start_pose.translation.x, start_pose.translation.y);
+                allocation_field.mark(
+                    start_coords.0,
+                    start_coords.1,
+                    &TrajectoryAllocation {
                         agent,
                         priority: i,
-                        dist_from_center: 0.0
-                    }, &start_coords, &mut allocation_field, 1.0);*/
-                if i+1 >= traj.poses.len() {
+                        dist_from_center: 0.0,
+                    },
+                );
+                /*self.blur(&TrajectoryAllocation {
+                    agent,
+                    priority: i,
+                    dist_from_center: 0.0
+                }, &start_coords, &mut allocation_field, 1.0);*/
+                if i + 1 >= traj.poses.len() {
                     continue;
                 }
 
-                let end_pose = traj.poses[i+1];
-                let end_coords = self.from_world_coords(
-                    end_pose.translation.x, end_pose.translation.y);
+                let end_pose = traj.poses[i + 1];
+                let end_coords =
+                    self.from_world_coords(end_pose.translation.x, end_pose.translation.y);
 
-                for (x,y) in Bresenham::new(start_coords, end_coords) {
-                    allocation_field.mark(x,y,&TrajectoryAllocation {
-                        agent,
-                        priority: i,
-                        dist_from_center: 0.0
-                    });
-                    self.blur(&TrajectoryAllocation {
-                        agent,
-                        priority: i,
-                        dist_from_center: 0.0
-                    }, &(x,y), &mut allocation_field, 1.0);
+                for (x, y) in Bresenham::new(start_coords, end_coords) {
+                    allocation_field.mark(
+                        x,
+                        y,
+                        &TrajectoryAllocation {
+                            agent,
+                            priority: i,
+                            dist_from_center: 0.0,
+                        },
+                    );
+                    self.blur(
+                        &TrajectoryAllocation {
+                            agent,
+                            priority: i,
+                            dist_from_center: 0.0,
+                        },
+                        &(x, y),
+                        &mut allocation_field,
+                        1.0,
+                    );
                 }
             }
         }
         allocation_field
     }
 
-    fn blur(&self, trajectory_alloc: &TrajectoryAllocation, start_cell: &(isize, isize), grid_space: &mut AllocationField, max_dist: f32)
-    {
+    fn blur(
+        &self,
+        trajectory_alloc: &TrajectoryAllocation,
+        start_cell: &(isize, isize),
+        grid_space: &mut AllocationField,
+        max_dist: f32,
+    ) {
         let mut stack = vec![(start_cell.clone(), 0.0f32)];
         let mut visited = HashSet::new();
         grid_space.mark(start_cell.0, start_cell.1, trajectory_alloc);
-        while let Some(((x,y), dist)) = stack.pop() {
+        while let Some(((x, y), dist)) = stack.pop() {
             for i in -1..=1 {
                 for j in -1..=1 {
-                    if x+i < 0 || y+j < 0 {
+                    if x + i < 0 || y + j < 0 {
                         continue;
                     }
-                    let nx = (x+i) as usize;
-                    let ny = (y+j) as usize;
+                    let nx = (x + i) as usize;
+                    let ny = (y + j) as usize;
 
-                    if visited.contains(&(nx, ny))
-                    {
+                    if visited.contains(&(nx, ny)) {
                         continue;
                     }
 
@@ -132,11 +161,11 @@ impl Grid2D {
                     if dist + 1.0 > max_dist {
                         continue;
                     }
-                    stack.push(((nx as isize, ny as isize), dist+1.0));
+                    stack.push(((nx as isize, ny as isize), dist + 1.0));
                     let alloc = TrajectoryAllocation {
                         agent: trajectory_alloc.agent,
                         priority: trajectory_alloc.priority,
-                        dist_from_center: dist+1.0,
+                        dist_from_center: dist + 1.0,
                     };
                     grid_space.mark(nx as isize, ny as isize, &alloc);
                     visited.insert((nx, ny));
@@ -147,17 +176,17 @@ impl Grid2D {
 }
 
 #[derive(Clone, Debug)]
-pub struct TrajectoryAllocation{
+pub struct TrajectoryAllocation {
     agent: usize,
     priority: usize,
-    dist_from_center: f32
+    dist_from_center: f32,
 }
 
 impl TrajectoryAllocation {
     fn to_wp(&self) -> SemanticWaypoint {
         SemanticWaypoint {
             agent: self.agent,
-            trajectory_index: self.priority
+            trajectory_index: self.priority,
         }
     }
 }
@@ -168,53 +197,51 @@ pub struct AllocationField {
     grid_space: Vec<Vec<Option<TrajectoryAllocation>>>,
     plan: SemanticPlan,
     leader_follower: LeaderFollowerZones,
-    cell_by_agent: HashMap<usize, HashSet<(usize, usize)>>
+    cell_by_agent: HashMap<usize, HashSet<(usize, usize)>>,
 }
 
 impl AllocationField {
     fn create(plan: SemanticPlan, width: usize, height: usize) -> Self {
-        let leader_follower =  plan.figure_out_leader_follower_zone();
-        Self{
+        let leader_follower = plan.figure_out_leader_follower_zone();
+        Self {
             grid_space: vec![vec![None; height]; width],
             plan,
             leader_follower,
-            cell_by_agent: HashMap::default()
+            cell_by_agent: HashMap::default(),
         }
     }
 
-    fn width(&self) -> usize
-    {
+    fn width(&self) -> usize {
         self.grid_space.len()
     }
 
-    fn height(&self) -> usize
-    {
+    fn height(&self) -> usize {
         if self.width() == 0 {
             0
-        }
-        else {
+        } else {
             self.grid_space[0].len()
         }
     }
 
-    fn update_spot(&mut self, alloc: &TrajectoryAllocation, x: usize, y: usize)
-    {
+    fn update_spot(&mut self, alloc: &TrajectoryAllocation, x: usize, y: usize) {
         if let Some(prev_alloc) = &self.grid_space[x][y] {
             if let Some(p) = self.cell_by_agent.get_mut(&prev_alloc.agent) {
-                p.remove(&(x,y));
+                p.remove(&(x, y));
             }
         }
         self.grid_space[x][y] = Some(alloc.clone());
         if let Some(allocated_list) = self.cell_by_agent.get_mut(&alloc.agent) {
-            allocated_list.insert((x,y));
-        }
-        else {
-            self.cell_by_agent.insert(alloc.agent, HashSet::from_iter([(x,y)].iter().cloned()));
+            allocated_list.insert((x, y));
+        } else {
+            self.cell_by_agent
+                .insert(alloc.agent, HashSet::from_iter([(x, y)].iter().cloned()));
         }
     }
 
-    fn mark(&mut self, x: isize, y: isize, alloc: &TrajectoryAllocation)
-    {
+    fn mark(&mut self, x: isize, y: isize, alloc: &TrajectoryAllocation) {
+        if x == 1 && y == 13 {
+            println!("Claim attempt {} {}  {:?}", x, y, alloc);
+        }
         let x = x as usize;
         let y = y as usize;
 
@@ -244,18 +271,20 @@ impl AllocationField {
         // In the event the relationship is an intersection based relationship,
         // give priority to the agent that is leaving the junction.
         else if previous_alloc.priority == alloc.priority {
-
             // Follower logic for tie-breaking.
-            if let Some((mode, priority, cluster_id)) = self.leader_follower.allocation_strategy.get(&previous_alloc.to_wp())
+            if let Some((mode, priority, cluster_id)) = self
+                .leader_follower
+                .allocation_strategy
+                .get(&previous_alloc.to_wp())
             {
-                if let Some((mode2, priority2, cluster_id2)) = self.leader_follower.allocation_strategy.get(&alloc.to_wp())
+                if let Some((mode2, priority2, cluster_id2)) =
+                    self.leader_follower.allocation_strategy.get(&alloc.to_wp())
                 {
                     if cluster_id == cluster_id2 {
                         if priority <= priority2 {
                             self.grid_space[x][y] = Some(previous_alloc.clone());
                             return;
-                        }
-                        else {
+                        } else {
                             self.update_spot(alloc, x, y);
                             return;
                         }
@@ -264,17 +293,19 @@ impl AllocationField {
             }
 
             // Logic for intersections
-            if let Some(intersection_type) = self.plan.is_intersection_participant(&previous_alloc.to_wp()) {
-                if let IntersectionType::Lead(followers) =  intersection_type {
+            if let Some(intersection_type) = self
+                .plan
+                .is_intersection_participant(&previous_alloc.to_wp())
+            {
+                println!("Intersection");
+                if let IntersectionType::Lead(followers) = intersection_type {
                     if followers.contains(&alloc.to_wp()) {
-                        self.grid_space[x][y] = Some(previous_alloc.clone());
+                        self.grid_space[x][y] = Some(alloc.clone());
                         return;
                     }
-                }
-                else if let IntersectionType::Next(leaders) = intersection_type {
-                    if leaders.contains(&alloc.to_wp())
-                    {
-                        self.update_spot(alloc, x, y);
+                } else if let IntersectionType::Next(leaders) = intersection_type {
+                    if leaders.contains(&alloc.to_wp()) {
+                        self.update_spot(&previous_alloc, x, y);
                         return;
                     }
                 }
@@ -282,33 +313,31 @@ impl AllocationField {
             // Vicinity rule.
             if previous_alloc.dist_from_center < alloc.dist_from_center {
                 self.grid_space[x][y] = Some(previous_alloc.clone());
-            }
-            else {
+            } else {
                 self.update_spot(alloc, x, y);
             }
-        }
-        else {
+        } else {
             self.update_spot(alloc, x, y);
         }
     }
 
-    pub fn get_allocation(&self, x: isize, y:isize) -> Option<usize> {
+    pub fn get_allocation(&self, x: isize, y: isize) -> Option<usize> {
         let Some(p) = self.grid_space[x as usize][y as usize].clone() else {
             return None;
         };
         return Some(p.agent);
     }
 
-    pub fn get_alloc_for_agent(&self, agent: usize) -> Option<Vec<(usize, usize)>>
-    {
-        self.cell_by_agent.get(&agent).map(|p| Vec::from_iter(p.iter().cloned()))
+    pub fn get_alloc_for_agent(&self, agent: usize) -> Option<Vec<(usize, usize)>> {
+        self.cell_by_agent
+            .get(&agent)
+            .map(|p| Vec::from_iter(p.iter().cloned()))
     }
 
-    pub fn get_alloc_priority(&self, x:isize, y:isize) -> Option<usize> {
+    pub fn get_alloc_priority(&self, x: isize, y: isize) -> Option<usize> {
         let Some(p) = self.grid_space[x as usize][y as usize].clone() else {
             return None;
         };
         return Some(p.priority);
     }
 }
-

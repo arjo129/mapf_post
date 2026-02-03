@@ -110,6 +110,19 @@ impl WaypointFollower {
         return v;
     }
 
+    pub fn remaining_safe_trajectory_segment(
+        &mut self,
+        seg: &CurrentlyAllocatedTrajSegment,
+    ) -> Vec<(f32, f32)> {
+        let mut v = vec![];
+        for p in self.current_pose_on_trajectory + 1..seg.end_id {
+            v.push((
+                self.trajectory.poses[p].translation.x,
+                self.trajectory.poses[p].translation.y,
+            ));
+        }
+        return v;
+    }
     /// Returns the current semantic waypoint
     pub fn get_semantic_waypoint(&mut self) -> SemanticWaypoint {
         SemanticWaypoint {
