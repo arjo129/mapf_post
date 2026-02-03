@@ -1,12 +1,12 @@
-use std::sync::Arc;
 use std::error::Error;
+use std::sync::Arc;
 
+use ::rand::Rng;
 use clap::Parser;
+use macroquad::prelude::*;
 use mapf_post::na::{Isometry2, Vector2};
 use mapf_post::spatial_allocation::{CurrentPosition, Grid2D};
-use mapf_post::{MapfResult, Trajectory, SemanticWaypoint};
-use macroquad::prelude::*;
-use ::rand::Rng;
+use mapf_post::{MapfResult, SemanticWaypoint, Trajectory};
 
 #[derive(Parser)]
 #[clap(version = "1.0", author = "Arjo Chakravarty")]
@@ -28,14 +28,18 @@ fn load_trajectories_from_csv(path: &str) -> Result<MapfResult, Box<dyn Error>> 
     let headers = reader.headers()?.clone();
     let num_agents = headers.len() / 2;
 
-    let mut trajectories: Vec<Trajectory> = (0..num_agents).map(|_| Trajectory { poses: vec![] }).collect();
+    let mut trajectories: Vec<Trajectory> = (0..num_agents)
+        .map(|_| Trajectory { poses: vec![] })
+        .collect();
 
     for result in reader.records() {
         let record = result?;
         for i in 0..num_agents {
             let x: f64 = record[i * 2].parse()?;
             let y: f64 = record[i * 2 + 1].parse()?;
-            trajectories[i].poses.push(Isometry2::new(Vector2::new(x as f32, y as f32), 0.0));
+            trajectories[i]
+                .poses
+                .push(Isometry2::new(Vector2::new(x as f32, y as f32), 0.0));
         }
     }
 
@@ -130,7 +134,12 @@ async fn main() {
             for j in 0..20 {
                 if let Some(agent) = allocation_field.get_allocation(i, j) {
                     let color = match agent {
-                        0 => RED,
+                        0 => Color {
+                            r: 1.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 0.5,
+                        },
                         1 => BLUE,
                         _ => GRAY,
                     };
@@ -141,7 +150,9 @@ async fn main() {
                         cell_size - 2.0 * padding,
                         color,
                     );
-                    if let Some(priority) = allocation_field.get_alloc_priority(i as isize, j as isize) {
+                    if let Some(priority) =
+                        allocation_field.get_alloc_priority(i as isize, j as isize)
+                    {
                         let text = &priority.to_string();
                         let text_dims = measure_text(text, None, 16, 1.0);
                         draw_text(
@@ -158,9 +169,24 @@ async fn main() {
 
         for (agent_id, position) in current_positions.iter().enumerate() {
             let color = match agent_id {
-                0 => Color { r: 0.8, g: 0.0, b: 0.0, a: 1.0 },
-                1 => Color { r: 0.0, g: 0.0, b: 0.8, a: 1.0 },
-                _ => Color { r: 0.3, g: 0.3, b: 0.3, a: 1.0 },
+                0 => Color {
+                    r: 0.8,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 1.0,
+                },
+                1 => Color {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.8,
+                    a: 1.0,
+                },
+                _ => Color {
+                    r: 0.3,
+                    g: 0.3,
+                    b: 0.3,
+                    a: 1.0,
+                },
             };
             let agent_x = position.real_position.0 as f32;
             let agent_y = position.real_position.1 as f32;
@@ -176,14 +202,17 @@ async fn main() {
             last_update = macroquad::time::get_time();
             let mut all_agents_finished = true;
             for (agent_id, position) in current_positions.iter_mut().enumerate() {
-                if agent_id == 0 {
-                    if ::rand::thread_rng().gen_bool(0.5) {
-                        continue;
-                    }
-                }
-                if position.semantic_position.trajectory_index < mapf_result.trajectories[agent_id].poses.len() - 1 {
+                //if agent_id == 0 {
+                //    if ::rand::thread_rng().gen_bool(0.5) {
+                //        continue;
+                //    }
+                //}
+                if position.semantic_position.trajectory_index
+                    < mapf_result.trajectories[agent_id].poses.len() - 1
+                {
                     position.semantic_position.trajectory_index += 1;
-                    let next_pose = &mapf_result.trajectories[agent_id].poses[position.semantic_position.trajectory_index];
+                    let next_pose = &mapf_result.trajectories[agent_id].poses
+                        [position.semantic_position.trajectory_index];
                     position.real_position = (next_pose.translation.x, next_pose.translation.y);
                     all_agents_finished = false;
                 }
@@ -195,7 +224,10 @@ async fn main() {
         }
 
         let time_step_text = if !current_positions.is_empty() {
-            format!("Time Step: {}", current_positions[0].semantic_position.trajectory_index)
+            format!(
+                "Time Step: {}",
+                current_positions[0].semantic_position.trajectory_index
+            )
         } else {
             "Time Step: 0".to_string()
         };
