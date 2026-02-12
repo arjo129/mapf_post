@@ -4,6 +4,7 @@ use std::env::current_dir;
 use std::slice::SliceIndex;
 use std::sync::Arc;
 
+use macroquad::miniquad::native::linux_x11::libx11::PMaxSize;
 use nalgebra::{ComplexField, Point};
 use parry2d::na::{Isometry2, Point2};
 use parry2d::query::cast_shapes_nonlinear;
@@ -861,6 +862,32 @@ impl SemanticPlan {
             );
         }
         final_reservation_table
+    }
+
+    pub fn check_for_violation(&self, current_pos: &Vec<SemanticWaypoint>) -> bool {
+        let mut agent_to_pos = HashMap::new();
+        for &wp in current_pos {
+            agent_to_pos.insert(wp.agent, wp);
+        }
+
+        for wp in current_pos {
+            if let Some(deps) = self.comes_before(wp) {
+                for &dep_idx in deps {
+                    let dep_wp = self.waypoints[dep_idx];
+                    
+                    if dep_wp.agent == wp.agent {
+                        continue;
+                    }
+
+                    if let Some(other_agent) = agent_to_pos.get(&dep_wp.agent) {
+                        if other_agent.trajectory_index <= dep_wp.trajectory_index {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
     }
 }
 
