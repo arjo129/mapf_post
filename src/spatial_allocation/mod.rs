@@ -267,11 +267,11 @@ impl AllocationField {
         // give priority to the agent that is leaving the junction.
         else if previous_alloc.priority == alloc.priority {
             // Follower logic for tie-breaking.
-            if let Some((mode, priority, cluster_id)) = self
+            if let Some((_mode, priority, cluster_id)) = self
                 .leader_follower
                 .allocation_strategy
                 .get(&previous_alloc.to_wp())
-                && let Some((mode2, priority2, cluster_id2)) =
+                && let Some((_mode2, priority2, cluster_id2)) =
                     self.leader_follower.allocation_strategy.get(&alloc.to_wp())
                     && cluster_id == cluster_id2 {
                         if priority <= priority2 {
