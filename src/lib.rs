@@ -17,7 +17,8 @@ use petgraph::visit::EdgeRef;
 
 pub mod spatial_allocation;
 
-// TODO(arjoc): Move to pure pursuit.
+/// A simple class to estimate a Robot's Semantic position based on its location
+/// on a trajectory. It assumes you start near the start of the robot trajectory.
 pub struct WaypointFollower {
     trajectory: Trajectory,
     current_pose_on_trajectory: usize,
@@ -25,7 +26,7 @@ pub struct WaypointFollower {
 }
 
 impl WaypointFollower {
-    ///
+    /// Construct the follower for `agent_id` based on a trajectory
     pub fn from_trajectory(agent_id: usize, trajectory: Trajectory) -> Self {
         Self {
             trajectory,
@@ -94,6 +95,7 @@ impl WaypointFollower {
         self.trajectory.poses[self.current_pose_on_trajectory + 1]
     }
 
+    /// Returns a list of (x,y)  coordinates left for the robot to go through
     pub fn remaining_trajectory(&mut self) -> Vec<(f32, f32)> {
         let mut v = vec![];
         for p in self.current_pose_on_trajectory + 1..self.trajectory.poses.len() {
@@ -105,6 +107,7 @@ impl WaypointFollower {
         v
     }
 
+    /// Returns the list of (x,y) coordinates that are currently safe for the robot to traverse
     pub fn remaining_safe_trajectory_segment(
         &mut self,
         seg: &CurrentlyAllocatedTrajSegment,
@@ -118,6 +121,7 @@ impl WaypointFollower {
         }
         v
     }
+
     /// Returns the current semantic waypoint
     pub fn get_semantic_waypoint(&mut self) -> SemanticWaypoint {
         SemanticWaypoint {
@@ -182,7 +186,8 @@ fn test_waypoint_follower() {
     let semantic_pose = follower.get_semantic_waypoint();
     assert_eq!(semantic_pose.trajectory_index, 2);
 }
-/// Semantic waypoint
+
+/// Semantic waypoint: A point on the trajectory that needs to be passed.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct SemanticWaypoint {
     pub agent: usize,
@@ -203,7 +208,7 @@ pub enum SafeNextStatesError {
     InternalStateMisMatch,
 }
 
-/// Semantic Plan represesnts the plan in terms of semantics.
+/// Semantic Plan represesnts the plan in terms of SemanticWaypoints
 #[derive(Clone, Debug, Default)]
 pub struct SemanticPlan {
     /// Number of agents
@@ -746,11 +751,12 @@ impl SemanticPlan {
             let mut hypothetical_leader = leader;
             hypothetical_leader.trajectory_index += 1;
             if let Some(leader_segment) = leader_to_leader_segments.get(&hypothetical_leader)
-                && let Some(leaders) = leader_segment_to_leader.get_mut(leader_segment) {
-                    leaders.insert(leader);
-                    leader_to_leader_segments.insert(leader, *leader_segment);
-                    continue;
-                }
+                && let Some(leaders) = leader_segment_to_leader.get_mut(leader_segment)
+            {
+                leaders.insert(leader);
+                leader_to_leader_segments.insert(leader, *leader_segment);
+                continue;
+            }
             leader_segment_to_leader.insert(
                 last_lead_segment,
                 HashSet::from_iter([leader].iter().cloned()),
@@ -882,9 +888,10 @@ impl SemanticPlan {
                     }
 
                     if let Some(other_agent) = agent_to_pos.get(&dep_wp.agent)
-                        && other_agent.trajectory_index <= dep_wp.trajectory_index {
-                            return true;
-                        }
+                        && other_agent.trajectory_index <= dep_wp.trajectory_index
+                    {
+                        return true;
+                    }
                 }
             }
         }
@@ -892,11 +899,15 @@ impl SemanticPlan {
     }
 }
 
+/// The currently allocated trajectory segment based on the overall
+/// progress of all other roots.
 pub struct CurrentlyAllocatedTrajSegment {
     pub start_id: usize,
     pub end_id: usize,
 }
 
+/// Representation of the type of dependency. Is it a leader, a follower, an
+/// intersection or in the vicinity.
 pub enum AllocationStrategy {
     Leader(f32, f32), // Clears space till the end of the leader
     Follower(usize),  // Follows x
@@ -905,7 +916,8 @@ pub enum AllocationStrategy {
     Vicinity,
 }
 
-pub struct LeaderFollowerZones {
+/// Leader-follower zones describe space time regions in which leader-follower relationships hold
+pub(crate) struct LeaderFollowerZones {
     pub(crate) allocation_strategy: HashMap<SemanticWaypoint, (AllocationStrategy, usize, usize)>,
 }
 
