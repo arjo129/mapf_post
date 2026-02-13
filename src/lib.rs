@@ -1,6 +1,5 @@
 use core::panic;
 use std::collections::{HashMap, HashSet};
-use std::slice::SliceIndex;
 use std::sync::Arc;
 
 use parry2d::na::{Isometry2, Point2};
