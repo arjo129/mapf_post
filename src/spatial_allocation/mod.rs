@@ -288,7 +288,6 @@ impl AllocationField {
                 .plan
                 .is_intersection_participant(&previous_alloc.to_wp())
             {
-                println!("Intersection");
                 if let IntersectionType::Lead(followers) = intersection_type {
                     if followers.contains(&alloc.to_wp()) {
                         self.grid_space[x][y] = Some(alloc.clone());
