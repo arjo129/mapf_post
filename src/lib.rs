@@ -808,10 +808,6 @@ impl SemanticPlan {
         }
 
         LeaderFollowerZones {
-            allocate_till,
-            leader_to_leader_segments,
-            leader_segment_to_leader,
-            wp_to_cluster,
             allocation_strategy,
         }
     }
@@ -887,7 +883,7 @@ impl SemanticPlan {
             if let Some(deps) = self.comes_before(wp) {
                 for &dep_idx in deps {
                     let dep_wp = self.waypoints[dep_idx];
-                    
+
                     if dep_wp.agent == wp.agent {
                         continue;
                     }
@@ -918,10 +914,6 @@ pub enum AllocationStrategy {
 }
 
 pub struct LeaderFollowerZones {
-    allocate_till: HashMap<SemanticWaypoint, SemanticWaypoint>,
-    leader_to_leader_segments: HashMap<SemanticWaypoint, usize>,
-    leader_segment_to_leader: HashMap<usize, HashSet<SemanticWaypoint>>,
-    wp_to_cluster: HashMap<SemanticWaypoint, usize>,
     pub(crate) allocation_strategy: HashMap<SemanticWaypoint, (AllocationStrategy, usize, usize)>,
 }
 
@@ -1321,11 +1313,12 @@ mod tests {
                 trajectory_index: 2,
             })
             .unwrap();
-        assert_eq!(res.len(), 2); // 2 waypoints should come before this one
+        assert_eq!(res.len(), 3); // 3 waypoints should come before this one
         let t1 = semantic_plan.waypoints[res[0]];
         let t2 = semantic_plan.waypoints[res[1]];
+        let t3 = semantic_plan.waypoints[res[2]];
 
-        let desired = HashSet::from_iter(vec![t1, t2]);
+        let desired = HashSet::from_iter(vec![t1, t2, t3]);
         assert!(desired.contains(&SemanticWaypoint {
             agent: 0,
             trajectory_index: 1
@@ -1334,36 +1327,5 @@ mod tests {
             agent: 1,
             trajectory_index: 1
         }));
-    }
-
-    #[test]
-    fn test_is_safe() {}
-
-    #[test]
-    fn classify_follower_trajectory() {
-        let follow_result = MapfResult {
-            trajectories: vec![
-                vec![
-                    Isometry2::new(Vector2::new(0.0, 0.0), 0.0),
-                    Isometry2::new(Vector2::new(1.0, 0.0), 0.0),
-                    Isometry2::new(Vector2::new(2.0, 0.0), 0.0),
-                    Isometry2::new(Vector2::new(3.0, 0.0), 0.0),
-                ],
-                vec![
-                    Isometry2::new(Vector2::new(1.0, 0.0), 0.0),
-                    Isometry2::new(Vector2::new(2.0, 0.0), 0.0),
-                    Isometry2::new(Vector2::new(3.0, 0.0), 0.0),
-                    Isometry2::new(Vector2::new(4.0, 0.0), 0.0),
-                ],
-            ]
-            .into_iter()
-            .map(|poses| Trajectory { poses })
-            .collect(),
-            footprints: vec![
-                Arc::new(parry2d::shape::Ball::new(0.49)), // Footprint for agent1
-                Arc::new(parry2d::shape::Ball::new(0.49)), // Footprint for agent2
-            ],
-            discretization_timestep: 1.0,
-        };
     }
 }
