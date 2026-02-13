@@ -98,7 +98,7 @@ async fn main() {
 
         if (now() - last_time) > 1.0 {
             i += 1;
-            if i + 1 >= mapf_result.trajectories.len() {
+            if i + 1 >= mapf_result.trajectories[0].poses.len() {
                 i = 0;
                 last_time = now();
             }
