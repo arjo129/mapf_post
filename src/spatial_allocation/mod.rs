@@ -257,6 +257,8 @@ impl AllocationField {
 
         // We keep reservations from earlier times first
         if previous_alloc.priority < alloc.priority {
+            // Existing (earlier) reservation wins; leave it unchanged.
+            return;
         }
         // In the event that a reservation is of the same priority/time step
         // we need to apply rules for allocation.
