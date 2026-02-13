@@ -236,9 +236,6 @@ impl AllocationField {
     }
 
     fn mark(&mut self, x: isize, y: isize, alloc: &TrajectoryAllocation) {
-        if x == 1 && y == 13 {
-            println!("Claim attempt {} {}  {:?}", x, y, alloc);
-        }
         let x = x as usize;
         let y = y as usize;
 
