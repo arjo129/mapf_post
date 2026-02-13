@@ -207,7 +207,7 @@ pub enum SafeNextStatesError {
     InternalStateMisMatch,
 }
 
-/// Semantic Plan represesnts the plan in terms of SemanticWaypoints
+/// Semantic Plan represents the plan in terms of SemanticWaypoints
 #[derive(Clone, Debug, Default)]
 pub struct SemanticPlan {
     /// Number of agents
