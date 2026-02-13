@@ -315,7 +315,17 @@ impl AllocationField {
     }
 
     pub fn get_allocation(&self, x: isize, y: isize) -> Option<usize> {
-        let Some(p) = self.grid_space[x as usize][y as usize].clone() else {
+        if x < 0 || y < 0 {
+            return None;
+        }
+        let x = x as usize;
+        let y = y as usize;
+        
+        if x >= self.width() || y >= self.height() {
+            return None;
+        }
+        
+        let Some(p) = self.grid_space[x][y].clone() else {
             return None;
         };
         Some(p.agent)
@@ -328,7 +338,17 @@ impl AllocationField {
     }
 
     pub fn get_alloc_priority(&self, x: isize, y: isize) -> Option<usize> {
-        let Some(p) = self.grid_space[x as usize][y as usize].clone() else {
+        if x < 0 || y < 0 {
+            return None;
+        }
+        let x = x as usize;
+        let y = y as usize;
+        
+        if x >= self.width() || y >= self.height() {
+            return None;
+        }
+        
+        let Some(p) = self.grid_space[x][y].clone() else {
             return None;
         };
         Some(p.priority)
