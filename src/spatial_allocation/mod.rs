@@ -52,7 +52,7 @@ impl Grid2D {
     pub fn allocate_trajectory(
         &self,
         trajectories: &MapfResult,
-        positions: &Vec<CurrentPosition>,
+        positions: &[CurrentPosition],
     ) -> AllocationField {
         let semantic_plan = mapf_post(trajectories);
         let semantic_positions = positions.iter().map(|p| p.semantic_position).collect();
