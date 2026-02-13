@@ -900,7 +900,7 @@ impl SemanticPlan {
 }
 
 /// The currently allocated trajectory segment based on the overall
-/// progress of all other roots.
+/// progress of all other robots.
 pub struct CurrentlyAllocatedTrajSegment {
     pub start_id: usize,
     pub end_id: usize,
