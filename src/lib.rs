@@ -872,7 +872,7 @@ impl SemanticPlan {
         final_reservation_table
     }
 
-    pub fn check_for_violation(&self, current_pos: &Vec<SemanticWaypoint>) -> bool {
+    pub fn check_for_violation(&self, current_pos: &[SemanticWaypoint]) -> bool {
         let mut agent_to_pos = HashMap::new();
         for &wp in current_pos {
             agent_to_pos.insert(wp.agent, wp);
