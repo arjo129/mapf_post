@@ -1,8 +1,6 @@
-use core::alloc;
 use std::collections::{HashMap, HashSet};
 
 use bresenham::Bresenham;
-use parry2d::na::max;
 
 use crate::{
     IntersectionType, LeaderFollowerZones, MapfResult, SemanticPlan, SemanticWaypoint, mapf_post,
@@ -130,7 +128,7 @@ impl Grid2D {
         grid_space: &mut AllocationField,
         max_dist: f32,
     ) {
-        let mut stack = vec![(start_cell.clone(), 0.0f32)];
+        let mut stack = vec![(*start_cell, 0.0f32)];
         let mut visited = HashSet::new();
         grid_space.mark(start_cell.0, start_cell.1, trajectory_alloc);
         while let Some(((x, y), dist)) = stack.pop() {
@@ -224,11 +222,10 @@ impl AllocationField {
     }
 
     fn update_spot(&mut self, alloc: &TrajectoryAllocation, x: usize, y: usize) {
-        if let Some(prev_alloc) = &self.grid_space[x][y] {
-            if let Some(p) = self.cell_by_agent.get_mut(&prev_alloc.agent) {
+        if let Some(prev_alloc) = &self.grid_space[x][y]
+            && let Some(p) = self.cell_by_agent.get_mut(&prev_alloc.agent) {
                 p.remove(&(x, y));
             }
-        }
         self.grid_space[x][y] = Some(alloc.clone());
         if let Some(allocated_list) = self.cell_by_agent.get_mut(&alloc.agent) {
             allocated_list.insert((x, y));
@@ -260,7 +257,6 @@ impl AllocationField {
 
         // We keep reservations from earlier times first
         if previous_alloc.priority < alloc.priority {
-            return;
         }
         // In the event that a reservation is of the same priority/time step
         // we need to apply rules for allocation.
@@ -276,11 +272,9 @@ impl AllocationField {
                 .leader_follower
                 .allocation_strategy
                 .get(&previous_alloc.to_wp())
-            {
-                if let Some((mode2, priority2, cluster_id2)) =
+                && let Some((mode2, priority2, cluster_id2)) =
                     self.leader_follower.allocation_strategy.get(&alloc.to_wp())
-                {
-                    if cluster_id == cluster_id2 {
+                    && cluster_id == cluster_id2 {
                         if priority <= priority2 {
                             self.grid_space[x][y] = Some(previous_alloc.clone());
                             return;
@@ -289,8 +283,6 @@ impl AllocationField {
                             return;
                         }
                     }
-                }
-            }
 
             // Logic for intersections
             if let Some(intersection_type) = self
@@ -303,12 +295,11 @@ impl AllocationField {
                         self.grid_space[x][y] = Some(alloc.clone());
                         return;
                     }
-                } else if let IntersectionType::Next(leaders) = intersection_type {
-                    if leaders.contains(&alloc.to_wp()) {
+                } else if let IntersectionType::Next(leaders) = intersection_type
+                    && leaders.contains(&alloc.to_wp()) {
                         self.update_spot(&previous_alloc, x, y);
                         return;
                     }
-                }
             }
             // Vicinity rule.
             if previous_alloc.dist_from_center < alloc.dist_from_center {
@@ -325,7 +316,7 @@ impl AllocationField {
         let Some(p) = self.grid_space[x as usize][y as usize].clone() else {
             return None;
         };
-        return Some(p.agent);
+        Some(p.agent)
     }
 
     pub fn get_alloc_for_agent(&self, agent: usize) -> Option<Vec<(usize, usize)>> {
@@ -338,6 +329,6 @@ impl AllocationField {
         let Some(p) = self.grid_space[x as usize][y as usize].clone() else {
             return None;
         };
-        return Some(p.priority);
+        Some(p.priority)
     }
 }

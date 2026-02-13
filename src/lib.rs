@@ -1,25 +1,19 @@
 use core::panic;
-use std::collections::{HashMap, HashSet, hash_set};
-use std::env::current_dir;
+use std::collections::{HashMap, HashSet};
 use std::slice::SliceIndex;
 use std::sync::Arc;
 
-use macroquad::miniquad::native::linux_x11::libx11::PMaxSize;
-use nalgebra::{ComplexField, Point};
 use parry2d::na::{Isometry2, Point2};
 use parry2d::query::cast_shapes_nonlinear;
-use parry2d::query::point::PointCompositeShapeProjWithLocationBestFirstVisitor;
 use parry2d::query::{NonlinearRigidMotion, ShapeCastStatus};
 use parry2d::shape::Shape;
 
 pub use parry2d::na;
 pub use parry2d::shape;
-use parry3d::query::sat::triangle_cuboid_find_local_separating_normal_oneway;
 use petgraph::algo::toposort;
-use petgraph::csr::NodeIndex;
 use petgraph::data::Build;
-use petgraph::graph::{DiGraph, node_index};
-use petgraph::visit::{EdgeIndexable, EdgeRef};
+use petgraph::graph::DiGraph;
+use petgraph::visit::EdgeRef;
 
 pub mod spatial_allocation;
 
@@ -95,9 +89,9 @@ impl WaypointFollower {
     /// Gives the next waypoint we should consider.
     pub fn next_waypoint(&mut self) -> Isometry2<f32> {
         if self.current_pose_on_trajectory + 1 >= self.trajectory.poses.len() {
-            return self.trajectory.poses.last().unwrap().clone();
+            return *self.trajectory.poses.last().unwrap();
         }
-        return self.trajectory.poses[self.current_pose_on_trajectory + 1];
+        self.trajectory.poses[self.current_pose_on_trajectory + 1]
     }
 
     pub fn remaining_trajectory(&mut self) -> Vec<(f32, f32)> {
@@ -108,7 +102,7 @@ impl WaypointFollower {
                 self.trajectory.poses[p].translation.y,
             ));
         }
-        return v;
+        v
     }
 
     pub fn remaining_safe_trajectory_segment(
@@ -122,7 +116,7 @@ impl WaypointFollower {
                 self.trajectory.poses[p].translation.y,
             ));
         }
-        return v;
+        v
     }
     /// Returns the current semantic waypoint
     pub fn get_semantic_waypoint(&mut self) -> SemanticWaypoint {
@@ -351,8 +345,8 @@ impl SemanticPlan {
         let mut digraph = DiGraph::new();
         let mut node_index_map = HashMap::new();
         for waypoint in &self.waypoints {
-            let node_index = digraph.add_node(waypoint.clone());
-            node_index_map.insert(waypoint, node_index.clone());
+            let node_index = digraph.add_node(*waypoint);
+            node_index_map.insert(waypoint, node_index);
         }
         for (after, befores) in &self.depends_on_all_of {
             for before in befores {
@@ -371,7 +365,7 @@ impl SemanticPlan {
                 digraph.add_edge(before, after, ());
             }
         }
-        return digraph;
+        digraph
     }
 
     /// Returns the traffic dependencies at the current time.
@@ -445,8 +439,8 @@ impl SemanticPlan {
             if waypoint.trajectory_index > max_time_stamp {
                 continue;
             }
-            let node_index = digraph.add_node(waypoint.clone());
-            node_index_map.insert(waypoint, node_index.clone());
+            let node_index = digraph.add_node(*waypoint);
+            node_index_map.insert(waypoint, node_index);
         }
         for (after, befores) in &self.depends_on_all_of {
             for before in befores {
@@ -465,7 +459,7 @@ impl SemanticPlan {
                 digraph.add_edge(before, after, ());
             }
         }
-        return digraph;
+        digraph
     }
 
     /// Generate a DOT representation of the graph for visualization
@@ -524,14 +518,14 @@ impl SemanticPlan {
             return None;
         };
 
-        let Some(p) = self.depends_on_all_of.get(&wp_id) else {
+        let Some(p) = self.depends_on_all_of.get(wp_id) else {
             return None;
         };
 
-        let Some(q) = self.potential_successors.get(&wp_id) else {
+        let Some(q) = self.potential_successors.get(wp_id) else {
             return None;
         };
-        if self.is_follower(waypoint).len() == 0 {
+        if self.is_follower(waypoint).is_empty() {
             if p.len() > 1 {
                 let mut children = HashSet::new();
                 for &wp in p {
@@ -566,10 +560,10 @@ impl SemanticPlan {
             return vec![];
         }
 
-        let mut next_waypoint = waypoint.clone();
+        let mut next_waypoint = *waypoint;
         next_waypoint.trajectory_index += 1;
 
-        let Some(wp_id) = self.agent_time_to_wp_id.get(&waypoint) else {
+        let Some(wp_id) = self.agent_time_to_wp_id.get(waypoint) else {
             return vec![];
         };
         let Some(next_wp_id) = self.agent_time_to_wp_id.get(&next_waypoint) else {
@@ -642,8 +636,8 @@ impl SemanticPlan {
 
         let mut wp_to_nodeid = HashMap::new();
         for wp in &self.waypoints {
-            let node_id = follow_graph.add_node(wp.clone());
-            wp_to_nodeid.insert(wp.clone(), node_id);
+            let node_id = follow_graph.add_node(*wp);
+            wp_to_nodeid.insert(*wp, node_id);
         }
 
         // Determine follower relationship
@@ -677,7 +671,7 @@ impl SemanticPlan {
         let mut wp_to_cluster: HashMap<SemanticWaypoint, usize> = HashMap::new();
         for (cluster_id, agent_waypoints) in &p {
             for agent_waypoint in agent_waypoints {
-                wp_to_cluster.insert(agent_waypoint.clone(), *cluster_id);
+                wp_to_cluster.insert(*agent_waypoint, *cluster_id);
             }
         }
 
@@ -692,8 +686,8 @@ impl SemanticPlan {
             let mut sub_graph = DiGraph::new();
             let mut wp_to_nodeid = HashMap::new();
             for agent_waypoint in agent_waypoint {
-                let node_id = sub_graph.add_node(agent_waypoint.clone());
-                wp_to_nodeid.insert(agent_waypoint.clone(), node_id);
+                let node_id = sub_graph.add_node(*agent_waypoint);
+                wp_to_nodeid.insert(*agent_waypoint, node_id);
             }
 
             for edge in follow_graph.edge_references() {
@@ -713,7 +707,7 @@ impl SemanticPlan {
 
             // Extract prime leader
             let ts = toposort(&sub_graph, None);
-            let ts: Vec<_> = ts.unwrap().iter().map(|v| sub_graph[*v].clone()).collect();
+            let ts: Vec<_> = ts.unwrap().iter().map(|v| sub_graph[*v]).collect();
             if let Some(&leader) = ts.first()
                 && ts.len() > 1
             {
@@ -749,18 +743,17 @@ impl SemanticPlan {
         let mut last_lead_segment = 1usize;
 
         for leader in leaders {
-            let mut hypothetical_leader = leader.clone();
+            let mut hypothetical_leader = leader;
             hypothetical_leader.trajectory_index += 1;
-            if let Some(leader_segment) = leader_to_leader_segments.get(&hypothetical_leader) {
-                if let Some(leaders) = leader_segment_to_leader.get_mut(leader_segment) {
-                    leaders.insert(leader.clone());
-                    leader_to_leader_segments.insert(leader.clone(), *leader_segment);
+            if let Some(leader_segment) = leader_to_leader_segments.get(&hypothetical_leader)
+                && let Some(leaders) = leader_segment_to_leader.get_mut(leader_segment) {
+                    leaders.insert(leader);
+                    leader_to_leader_segments.insert(leader, *leader_segment);
                     continue;
                 }
-            }
             leader_segment_to_leader.insert(
                 last_lead_segment,
-                HashSet::from_iter([leader.clone()].iter().cloned()),
+                HashSet::from_iter([leader].iter().cloned()),
             );
             leader_to_leader_segments.insert(leader, last_lead_segment);
             last_lead_segment += 1;
@@ -788,7 +781,7 @@ impl SemanticPlan {
                 };
 
                 if p.len() <= 1 {
-                    allocate_till.insert(sem_wp.clone(), sem_wp.clone());
+                    allocate_till.insert(*sem_wp, *sem_wp);
                     continue;
                 }
 
@@ -797,9 +790,9 @@ impl SemanticPlan {
                     if p[next_wp].trajectory_index - p[next_wp - 1].trajectory_index > 1
                         || next_wp == p.len() - 1
                     {
-                        let lead_segment = p[next_wp].clone();
+                        let lead_segment = *p[next_wp];
                         for id in last_upd..next_wp {
-                            allocate_till.insert(p[id].clone(), lead_segment);
+                            allocate_till.insert(*p[id], lead_segment);
                         }
                         last_upd = next_wp;
                     }
@@ -826,7 +819,7 @@ impl SemanticPlan {
 
         // Claim every waypoint that can be claimed.
         for wp in current_positions {
-            let mut new_wp = wp.clone();
+            let mut new_wp = *wp;
             loop {
                 new_wp.trajectory_index += 1;
                 if !self.agent_time_to_wp_id.contains_key(&new_wp) {
@@ -856,7 +849,7 @@ impl SemanticPlan {
                     break;
                 }
             }
-            allocate_till.insert(wp.clone(), new_wp);
+            allocate_till.insert(*wp, new_wp);
         }
 
         // Prepare output
@@ -888,11 +881,10 @@ impl SemanticPlan {
                         continue;
                     }
 
-                    if let Some(other_agent) = agent_to_pos.get(&dep_wp.agent) {
-                        if other_agent.trajectory_index <= dep_wp.trajectory_index {
+                    if let Some(other_agent) = agent_to_pos.get(&dep_wp.agent)
+                        && other_agent.trajectory_index <= dep_wp.trajectory_index {
                             return true;
                         }
-                    }
                 }
             }
         }
