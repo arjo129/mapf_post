@@ -4,15 +4,13 @@ use macroquad::miniquad::date::now;
 use macroquad::prelude::*;
 use mapf_post::Trajectory;
 use mapf_post::na::{Isometry2, Vector2};
-use mapf_post::{MapfResult, SemanticPlan};
+use mapf_post::MapfResult;
 use mapf_post::{SemanticWaypoint, mapf_post};
 use petgraph::algo::toposort;
 
 pub fn print_sort_order(mapf_result: &MapfResult) {
     let semantic_plan = mapf_post(mapf_result);
 
-    // Generate the DOT representation
-    let dot_representation = semantic_plan.to_dot();
     let pet_graph = semantic_plan.current_traffic_deps(&vec![
         SemanticWaypoint {
             agent: 0,
@@ -33,13 +31,6 @@ pub fn print_sort_order(mapf_result: &MapfResult) {
     for index in indices {
         println!("{:?}", pet_graph[index]);
     }
-
-    let p = semantic_plan.is_follower(&SemanticWaypoint {
-        agent: 0,
-        trajectory_index: 2,
-    });
-
-    semantic_plan.figure_out_leader_follower_zone();
 }
 
 #[macroquad::main("MyGame")]
