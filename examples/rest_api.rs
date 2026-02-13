@@ -3,7 +3,6 @@ use clap::Parser;
 use core::alloc;
 use csv;
 use mapf_post::spatial_allocation::{CurrentPosition, Grid2D};
-use rand::seq::IndexedRandom;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
