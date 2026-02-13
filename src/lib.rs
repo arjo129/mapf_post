@@ -374,7 +374,7 @@ impl SemanticPlan {
     }
 
     /// Returns the traffic dependencies at the current time.
-    pub fn get_current_cut(&self, current_state: &Vec<SemanticWaypoint>) -> Self {
+    pub fn get_current_cut(&self, current_state: &[SemanticWaypoint]) -> Self {
         let mut max_time_stamp = 0;
 
         // the minimum hashmap contains the lower time bound based on the
