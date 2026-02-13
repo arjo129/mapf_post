@@ -144,7 +144,5 @@ async fn main() {
         discretization_timestep: 1.0, // Example timestep
     };
 
-    let output_path = "output.dot"; // Specify the desired output path
-
-    print_sort_order(mapf_result, output_path);
+    print_sort_order(&mapf_result);
 }*/
