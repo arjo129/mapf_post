@@ -265,7 +265,7 @@ impl SemanticPlan {
     /// If there is a mismatch between the number of agents and number of
     pub fn is_safe_to_proceed(
         &self,
-        current_state: &Vec<SemanticWaypoint>,
+        current_state: &[SemanticWaypoint],
         agent: usize,
     ) -> Result<bool, SafeNextStatesError> {
         // Lots of O(n^2) behaviour that should really be O(n) or O(1) because our function signature takes current semantic state as a vec
@@ -422,7 +422,7 @@ impl SemanticPlan {
     /// Returns the traffic dependencies at the current time.
     pub fn current_traffic_deps(
         &self,
-        current_state: &Vec<SemanticWaypoint>,
+        current_state: &[SemanticWaypoint],
     ) -> DiGraph<SemanticWaypoint, ()> {
         let mut max_time_stamp = 0;
         let mut minimum = HashMap::new();
@@ -468,7 +468,7 @@ impl SemanticPlan {
 
     /// Generate a DOT representation of the graph for visualization
     /// Also colors the current state of the world.
-    pub fn to_dot_with_results(&self, waypoints: &Vec<SemanticWaypoint>) -> String {
+    pub fn to_dot_with_results(&self, waypoints: &[SemanticWaypoint]) -> String {
         let mut dot = String::from("digraph SemanticPlan {\n");
         let mut color = "white";
         for (id, waypoint) in self.waypoints.iter().enumerate() {
