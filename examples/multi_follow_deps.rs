@@ -10,6 +10,7 @@ pub fn generate_dot_file(mapf_result: MapfResult, output_path: &str) {
 
     // Generate the DOT representation
     let dot_representation = semantic_plan.to_dot();
+    //semantic_plan.get_leader_follower_deps();
 
     // Write the DOT representation to the specified file
     std::fs::write(output_path, dot_representation).expect("Unable to write DOT file");
@@ -23,22 +24,30 @@ fn main() {
                 Isometry2::new(Vector2::new(0.0, 0.0), 0.0),
                 Isometry2::new(Vector2::new(1.0, 0.0), 0.0),
                 Isometry2::new(Vector2::new(2.0, 0.0), 0.0),
-                Isometry2::new(Vector2::new(2.0, 0.0), 0.0),
-                Isometry2::new(Vector2::new(2.0, 0.0), 0.0),
+                Isometry2::new(Vector2::new(3.0, 0.0), 0.0),
+                Isometry2::new(Vector2::new(4.0, 0.0), 0.0),
             ], // Trajectory for agent1 (horizontal path)
-            vec![
-                Isometry2::new(Vector2::new(1.0, -1.0), 0.0),
-                Isometry2::new(Vector2::new(1.0, -1.0), 0.0),
+            /*vec![
                 Isometry2::new(Vector2::new(1.0, 0.0), 0.0),
-                Isometry2::new(Vector2::new(1.0, 1.0), 0.0),
-                Isometry2::new(Vector2::new(1.0, 1.0), 0.0),
-            ], // Trajectory for agent2 (vertical path)
+                Isometry2::new(Vector2::new(2.0, 0.0), 0.0),
+                Isometry2::new(Vector2::new(3.0, 0.0), 0.0),
+                Isometry2::new(Vector2::new(4.0, 0.0), 0.0),
+                Isometry2::new(Vector2::new(5.0, 0.0), 0.0),
+            ],*/ // Trajectory for agent2 (vertical path)
+            vec![
+                Isometry2::new(Vector2::new(2.0, 0.0), 0.0),
+                Isometry2::new(Vector2::new(3.0, 0.0), 0.0),
+                Isometry2::new(Vector2::new(4.0, 0.0), 0.0),
+                Isometry2::new(Vector2::new(5.0, 0.0), 0.0),
+                Isometry2::new(Vector2::new(6.0, 0.0), 0.0),
+            ],
         ]
         .into_iter()
         .map(|poses| Trajectory { poses })
         .collect(),
         footprints: vec![
             Arc::new(parry2d::shape::Ball::new(0.49)), // Footprint for agent1
+            //Arc::new(parry2d::shape::Ball::new(0.49)), // Footprint for agent2
             Arc::new(parry2d::shape::Ball::new(0.49)), // Footprint for agent2
         ],
         discretization_timestep: 1.0, // Example timestep

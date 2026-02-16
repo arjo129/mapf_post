@@ -8,8 +8,14 @@ use mapf_post::Trajectory;
 pub fn generate_dot_file(mapf_result: MapfResult, output_path: &str) {
     let semantic_plan = mapf_post(&mapf_result);
 
+    for p in &semantic_plan.waypoints {
+       println!("{:?}->{:?}", p, semantic_plan.is_follower(p));
+       println!("{:?}, {:?}", p, semantic_plan.is_intersection_participant(p));
+    }
+
     // Generate the DOT representation
     let dot_representation = semantic_plan.to_dot();
+    //semantic_plan.get_leader_follower_deps();
 
     // Write the DOT representation to the specified file
     std::fs::write(output_path, dot_representation).expect("Unable to write DOT file");
@@ -21,17 +27,18 @@ fn main() {
         trajectories: vec![
             vec![
                 Isometry2::new(Vector2::new(0.0, 0.0), 0.0),
+                Isometry2::new(Vector2::new(0.0, 0.0), 0.0),
                 Isometry2::new(Vector2::new(1.0, 0.0), 0.0),
                 Isometry2::new(Vector2::new(2.0, 0.0), 0.0),
-                Isometry2::new(Vector2::new(2.0, 0.0), 0.0),
-                Isometry2::new(Vector2::new(2.0, 0.0), 0.0),
+                Isometry2::new(Vector2::new(3.0, 0.0), 0.0),
+                Isometry2::new(Vector2::new(4.0, 0.0), 0.0),
             ], // Trajectory for agent1 (horizontal path)
             vec![
-                Isometry2::new(Vector2::new(1.0, -1.0), 0.0),
-                Isometry2::new(Vector2::new(1.0, -1.0), 0.0),
+                Isometry2::new(Vector2::new(3.0, 0.0), 0.0),
+                Isometry2::new(Vector2::new(2.0, 0.0), 0.0),
+                Isometry2::new(Vector2::new(2.0, 1.0), 0.0),
+                Isometry2::new(Vector2::new(1.0, 1.0), 0.0),
                 Isometry2::new(Vector2::new(1.0, 0.0), 0.0),
-                Isometry2::new(Vector2::new(1.0, 1.0), 0.0),
-                Isometry2::new(Vector2::new(1.0, 1.0), 0.0),
             ], // Trajectory for agent2 (vertical path)
         ]
         .into_iter()
@@ -44,7 +51,7 @@ fn main() {
         discretization_timestep: 1.0, // Example timestep
     };
 
-    let output_path = "output.dot"; // Specify the desired output path
+    let output_path = "intersection.dot"; // Specify the desired output path
 
     generate_dot_file(mapf_result, output_path);
 }
