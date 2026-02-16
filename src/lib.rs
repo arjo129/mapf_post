@@ -812,7 +812,7 @@ impl SemanticPlan {
 
     pub fn get_claim_dict(
         &self,
-        current_positions: &Vec<SemanticWaypoint>,
+        current_positions: &[SemanticWaypoint],
     ) -> HashMap<usize, CurrentlyAllocatedTrajSegment> {
         let mut allocate_till: HashMap<SemanticWaypoint, SemanticWaypoint> = HashMap::new();
 
