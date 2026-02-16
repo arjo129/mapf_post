@@ -468,7 +468,7 @@ impl SemanticPlan {
 
     /// Generate a DOT representation of the graph for visualization
     /// Also colors the current state of the world.
-    pub fn to_dot_with_results(&self, waypoints: &Vec<SemanticWaypoint>) -> String {
+    pub fn to_dot_with_results(&self, waypoints: &[SemanticWaypoint]) -> String {
         let mut dot = String::from("digraph SemanticPlan {\n");
         let mut color = "white";
         for (id, waypoint) in self.waypoints.iter().enumerate() {
@@ -812,7 +812,7 @@ impl SemanticPlan {
 
     pub fn get_claim_dict(
         &self,
-        current_positions: &Vec<SemanticWaypoint>,
+        current_positions: &[SemanticWaypoint],
     ) -> HashMap<usize, CurrentlyAllocatedTrajSegment> {
         let mut allocate_till: HashMap<SemanticWaypoint, SemanticWaypoint> = HashMap::new();
 

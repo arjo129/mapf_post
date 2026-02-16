@@ -55,7 +55,7 @@ impl Grid2D {
         positions: &[CurrentPosition],
     ) -> AllocationField {
         let semantic_plan = mapf_post(trajectories);
-        let semantic_positions = positions.iter().map(|p| p.semantic_position).collect();
+        let semantic_positions: Vec<SemanticWaypoint> = positions.iter().map(|p| p.semantic_position).collect();
         let assignment = semantic_plan.get_claim_dict(&semantic_positions);
 
         let mut allocation_field = AllocationField::create(semantic_plan, 1000, 1000);
