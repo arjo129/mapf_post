@@ -2,7 +2,7 @@ use core::panic;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use parry2d::bounding_volume::{Aabb, BoundingVolume};
+use parry2d::bounding_volume::{BoundingVolume, Aabb};
 use parry2d::na::{Isometry2, Point2};
 use parry2d::query::cast_shapes_nonlinear;
 use parry2d::query::{NonlinearRigidMotion, ShapeCastStatus};
@@ -712,24 +712,24 @@ impl SemanticPlan {
             // Extract prime leader
             let ts = toposort(&sub_graph, None);
             let ts: Vec<_> = ts.unwrap().iter().map(|v| sub_graph[*v]).collect();
-            if let Some(&leader) = ts.first() {
-                if ts.len() > 1 {
-                    cluster_to_leader.insert(cluster_id, leader);
-                    leader_to_cluster.insert(leader, cluster_id);
+            if let Some(&leader) = ts.first()
+                && ts.len() > 1
+            {
+                cluster_to_leader.insert(cluster_id, leader);
+                leader_to_cluster.insert(leader, cluster_id);
+                allocation_strategy.insert(
+                    ts[0],
+                    (AllocationStrategy::Leader(0.0, 0.0), 0, *cluster_id),
+                );
+                for i in 1..ts.len() {
                     allocation_strategy.insert(
-                        ts[0],
-                        (AllocationStrategy::Leader(0.0, 0.0), 0, *cluster_id),
+                        ts[i],
+                        (
+                            AllocationStrategy::Follower(ts[i - 1].agent),
+                            i,
+                            *cluster_id,
+                        ),
                     );
-                    for i in 1..ts.len() {
-                        allocation_strategy.insert(
-                            ts[i],
-                            (
-                                AllocationStrategy::Follower(ts[i - 1].agent),
-                                i,
-                                *cluster_id,
-                            ),
-                        );
-                    }
                 }
             }
         }
@@ -749,12 +749,12 @@ impl SemanticPlan {
         for leader in leaders {
             let mut hypothetical_leader = leader;
             hypothetical_leader.trajectory_index += 1;
-            if let Some(leader_segment) = leader_to_leader_segments.get(&hypothetical_leader) {
-                if let Some(leaders) = leader_segment_to_leader.get_mut(leader_segment) {
-                    leaders.insert(leader);
-                    leader_to_leader_segments.insert(leader, *leader_segment);
-                    continue;
-                }
+            if let Some(leader_segment) = leader_to_leader_segments.get(&hypothetical_leader)
+                && let Some(leaders) = leader_segment_to_leader.get_mut(leader_segment)
+            {
+                leaders.insert(leader);
+                leader_to_leader_segments.insert(leader, *leader_segment);
+                continue;
             }
             leader_segment_to_leader.insert(
                 last_lead_segment,
@@ -886,10 +886,10 @@ impl SemanticPlan {
                         continue;
                     }
 
-                    if let Some(other_agent) = agent_to_pos.get(&dep_wp.agent) {
-                        if other_agent.trajectory_index <= dep_wp.trajectory_index {
-                            return true;
-                        }
+                    if let Some(other_agent) = agent_to_pos.get(&dep_wp.agent)
+                        && other_agent.trajectory_index <= dep_wp.trajectory_index
+                    {
+                        return true;
                     }
                 }
             }
@@ -1108,9 +1108,9 @@ pub fn mapf_post(mapf_result: &MapfResult) -> SemanticPlan {
         let seg1 = &all_segments[i];
         for j in i + 1..all_segments.len() {
             let seg2 = &all_segments[j];
-
-            // Sweep-line pruning: since segments are sorted by min x,
-            // if seg2.min_x > seg1.max_x, then seg2 and any subsequent segments
+            
+            // Sweep-line pruning: since segments are sorted by min x, 
+            // if seg2.min_x > seg1.max_x, then seg2 and any subsequent segments 
             // cannot overlap with seg1 on the x-axis.
             if seg2.aabb.mins.x > seg1.aabb.maxs.x {
                 break;

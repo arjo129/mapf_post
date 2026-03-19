@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use macroquad::miniquad::date::now;
 use macroquad::prelude::*;
+use mapf_post::Trajectory;
 use mapf_post::na::{Isometry2, Vector2};
 use mapf_post::MapfResult;
-use mapf_post::Trajectory;
-use mapf_post::{mapf_post, SemanticWaypoint};
+use mapf_post::{SemanticWaypoint, mapf_post};
 use petgraph::algo::toposort;
 
 pub fn print_sort_order(mapf_result: &MapfResult) {

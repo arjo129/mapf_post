@@ -3,8 +3,8 @@ use mapf_post::*;
 #[cfg(test)]
 #[test]
 fn test_check_for_violation() {
-    use mapf_post::na::{Isometry2, Vector2};
     use std::sync::Arc;
+    use mapf_post::na::{Isometry2, Vector2};
 
     // Setup same as test_get_claim_dict.rs
     // Agent 0 and Agent 1 follow the same path, Agent 1 starts ahead.
@@ -51,14 +51,8 @@ fn test_check_for_violation() {
     // Agent 0 at 0, Agent 1 at 0.
     // Agent 0 at (0,0). Agent 1 at (1,0). No conflict.
     let safe_state = vec![
-        SemanticWaypoint {
-            agent: 0,
-            trajectory_index: 0,
-        },
-        SemanticWaypoint {
-            agent: 1,
-            trajectory_index: 0,
-        },
+        SemanticWaypoint { agent: 0, trajectory_index: 0 },
+        SemanticWaypoint { agent: 1, trajectory_index: 0 },
     ];
     assert!(!semantic_plan.check_for_violation(&safe_state));
 
@@ -67,33 +61,21 @@ fn test_check_for_violation() {
     // Agent 0 collides with Agent 1.
     // This should be a violation.
     let violation_state = vec![
-        SemanticWaypoint {
-            agent: 0,
-            trajectory_index: 1,
-        },
-        SemanticWaypoint {
-            agent: 1,
-            trajectory_index: 0,
-        },
+        SemanticWaypoint { agent: 0, trajectory_index: 1 },
+        SemanticWaypoint { agent: 1, trajectory_index: 0 },
     ];
     // Note: check_for_violation is expected to return TRUE if there is a violation.
     // However, I haven't implemented it yet to return bool. I will do that.
     // So this test will fail to compile until I modify lib.rs.
     // But I will run it after modifying lib.rs.
     assert!(semantic_plan.check_for_violation(&violation_state));
-
+    
     // Case 3: Safe again
     // Agent 0 at 1. Agent 1 at 1 (moves to (2,0)).
     // Agent 1 has left (1,0). Agent 0 is at (1,0). Safe.
     let safe_state_2 = vec![
-        SemanticWaypoint {
-            agent: 0,
-            trajectory_index: 1,
-        },
-        SemanticWaypoint {
-            agent: 1,
-            trajectory_index: 1,
-        },
+        SemanticWaypoint { agent: 0, trajectory_index: 1 },
+        SemanticWaypoint { agent: 1, trajectory_index: 1 },
     ];
     assert!(!semantic_plan.check_for_violation(&safe_state_2));
 }
