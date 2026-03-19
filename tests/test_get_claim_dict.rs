@@ -2,8 +2,7 @@ use mapf_post::*;
 
 #[cfg(test)]
 #[test]
-fn test_get_claims_dict_follow()
-{
+fn test_get_claims_dict_follow() {
     use std::sync::Arc;
 
     use mapf_post::na::{Isometry2, Vector2};
@@ -39,30 +38,30 @@ fn test_get_claims_dict_follow()
 
     let semantic_plan = mapf_post(&mapf_result);
 
-    let reserved_parts =semantic_plan.get_claim_dict(&vec![
+    let reserved_parts = semantic_plan.get_claim_dict(&vec![
         SemanticWaypoint {
             agent: 0,
-            trajectory_index: 0
+            trajectory_index: 0,
         },
         SemanticWaypoint {
             agent: 1,
-            trajectory_index: 3
-        }
+            trajectory_index: 3,
+        },
     ]);
 
     assert_eq!(reserved_parts.len(), 2);
     assert_eq!(reserved_parts.get(&0).unwrap().end_id, 4);
     assert_eq!(reserved_parts.get(&1).unwrap().end_id, 6);
 
-    let reserved_parts =semantic_plan.get_claim_dict(&vec![
+    let reserved_parts = semantic_plan.get_claim_dict(&vec![
         SemanticWaypoint {
             agent: 0,
-            trajectory_index: 3
+            trajectory_index: 3,
         },
         SemanticWaypoint {
             agent: 1,
-            trajectory_index: 3
-        }
+            trajectory_index: 3,
+        },
     ]);
 
     assert_eq!(reserved_parts.len(), 2);

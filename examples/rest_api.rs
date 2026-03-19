@@ -1,4 +1,4 @@
-use axum::{Json, Router, extract::State, routing::post};
+use axum::{extract::State, routing::post, Json, Router};
 use clap::Parser;
 use core::alloc;
 use csv;
@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use axum::serve;
 use mapf_post::na::{Isometry2, Vector2};
 use mapf_post::{
-    MapfResult, SemanticPlan, SemanticWaypoint, Trajectory, WaypointFollower, mapf_post,
+    mapf_post, MapfResult, SemanticPlan, SemanticWaypoint, Trajectory, WaypointFollower,
 };
 use parry2d::shape::Shape;
 use tokio::net::TcpListener;
