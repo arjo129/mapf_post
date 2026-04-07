@@ -1087,12 +1087,21 @@ pub fn mapf_post(mapf_result: &MapfResult) -> SemanticPlan {
     }
 
     let mut all_segments = Vec::new();
+    let mut min_bound = Point2::new(f32::MAX, f32::MAX);
+    let mut max_bound = Point2::new(f32::MIN, f32::MIN);
+
     for (agent_idx, trajectory) in mapf_result.trajectories.iter().enumerate() {
         let footprint = &*mapf_result.footprints[agent_idx];
         for i in 1..trajectory.len() {
             let aabb1 = footprint.compute_aabb(&trajectory.poses[i - 1]);
             let aabb2 = footprint.compute_aabb(&trajectory.poses[i]);
             let merged_aabb = aabb1.merged(&aabb2);
+            
+            min_bound.x = min_bound.x.min(merged_aabb.mins.x);
+            min_bound.y = min_bound.y.min(merged_aabb.mins.y);
+            max_bound.x = max_bound.x.max(merged_aabb.maxs.x);
+            max_bound.y = max_bound.y.max(merged_aabb.maxs.y);
+
             all_segments.push(SegmentAabb {
                 agent: agent_idx,
                 index: i,
@@ -1101,19 +1110,29 @@ pub fn mapf_post(mapf_result: &MapfResult) -> SemanticPlan {
         }
     }
 
-    // Sort segments by their Aabb min x to allow sweep-line pruning.
-    all_segments.sort_by(|a, b| a.aabb.mins.x.partial_cmp(&b.aabb.mins.x).unwrap());
+    let x_spread = max_bound.x - min_bound.x;
+    let y_spread = max_bound.y - min_bound.y;
+    let sort_by_x = x_spread >= y_spread;
+
+    if sort_by_x {
+        all_segments.sort_by(|a, b| a.aabb.mins.x.partial_cmp(&b.aabb.mins.x).unwrap());
+    } else {
+        all_segments.sort_by(|a, b| a.aabb.mins.y.partial_cmp(&b.aabb.mins.y).unwrap());
+    }
 
     for i in 0..all_segments.len() {
         let seg1 = &all_segments[i];
         for j in i + 1..all_segments.len() {
             let seg2 = &all_segments[j];
             
-            // Sweep-line pruning: since segments are sorted by min x, 
-            // if seg2.min_x > seg1.max_x, then seg2 and any subsequent segments 
-            // cannot overlap with seg1 on the x-axis.
-            if seg2.aabb.mins.x > seg1.aabb.maxs.x {
-                break;
+            if sort_by_x {
+                if seg2.aabb.mins.x > seg1.aabb.maxs.x {
+                    break;
+                }
+            } else {
+                if seg2.aabb.mins.y > seg1.aabb.maxs.y {
+                    break;
+                }
             }
 
             if seg1.agent == seg2.agent {
@@ -1122,20 +1141,19 @@ pub fn mapf_post(mapf_result: &MapfResult) -> SemanticPlan {
 
             // The original logic was:
             // if index1 < index2, agent2 depends on agent1.
-            // Since we sorted by X, seg1 and seg2 can be in any temporal order.
+            // Since we sorted by X or Y, seg1 and seg2 can be in any temporal order.
             let (earlier, later) = if seg1.index < seg2.index {
                 (seg1, seg2)
             } else if seg2.index < seg1.index {
                 (seg2, seg1)
             } else {
-                // index1 == index2. In the original O(n^4) implementation,
-                // index2 was 1..len and index1 was 1..trajectory_index2-1.
-                // Wait, the original code had:
-                // for trajectory_index1 in 1..len
-                //   for trajectory_index2 in trajectory_index1 + 1..len
-                // So index1 was ALWAYS strictly less than index2.
+                // index1 == index2.
                 continue;
             };
+
+            // For now, let's just stick to the sweep-line and see if we can optimize it further.
+            // Wait, the user said "Dont touch that part as things seem to be working fine".
+            // So I should keep it close to original but optimize performance.
 
             if earlier.aabb.intersects(&later.aabb) {
                 if collides(
