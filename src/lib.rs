@@ -18,6 +18,7 @@ pub mod spatial_allocation;
 
 /// A simple class to estimate a Robot's Semantic position based on its location
 /// on a trajectory. It assumes you start near the start of the robot trajectory.
+#[derive(Clone)]
 pub struct WaypointFollower {
     trajectory: Trajectory,
     current_pose_on_trajectory: usize,
