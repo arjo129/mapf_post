@@ -980,6 +980,34 @@ pub struct MapfResult {
     pub discretization_timestep: f32,
 }
 
+impl MapfResult {
+    /// Create a snapshot of the MAPF result for a specific time window.
+    pub fn slice(&self, start: usize, end: usize) -> Self {
+        let actual_end = self
+            .trajectories
+            .iter()
+            .map(|t| t.len())
+            .min()
+            .unwrap_or(0)
+            .min(end);
+        let actual_start = start.min(actual_end);
+
+        let trajectories = self
+            .trajectories
+            .iter()
+            .map(|t| Trajectory {
+                poses: t.poses[actual_start..actual_end].to_vec(),
+            })
+            .collect();
+
+        Self {
+            trajectories,
+            footprints: self.footprints.clone(),
+            discretization_timestep: self.discretization_timestep,
+        }
+    }
+}
+
 impl std::fmt::Debug for MapfResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MapfResult")
@@ -1043,6 +1071,27 @@ fn collides(
             || toi.status == ShapeCastStatus::PenetratingOrWithinTargetDist
     } else {
         false
+    }
+}
+
+/// A Session manages the generation of semantic plans from MAPF results
+/// by chunking trajectories and using a lookahead window for collision checking.
+pub struct Session {
+    mapf_result: MapfResult,
+}
+
+impl Session {
+    pub fn new(mapf_result: MapfResult) -> Self {
+        Self { mapf_result }
+    }
+
+    /// Generates a semantic plan for a specific window of time steps.
+    ///
+    /// `start_step`: The starting time step of the window.
+    /// `lookahead`: How many steps ahead to look for collisions.
+    pub fn plan_window(&self, start_step: usize, lookahead: usize) -> SemanticPlan {
+        let snapshot = self.mapf_result.slice(start_step, start_step + lookahead);
+        mapf_post(&snapshot)
     }
 }
 
@@ -1396,5 +1445,46 @@ mod tests {
             agent: 1,
             trajectory_index: 1
         }));
+    }
+
+    #[test]
+    fn test_session_windowing() {
+        use parry2d::shape::Ball;
+
+        let footprint = Arc::new(Ball::new(0.5));
+        let traj1 = Trajectory {
+            poses: vec![
+                Isometry2::new(Vector2::new(0.0, 0.0), 0.0),
+                Isometry2::new(Vector2::new(1.0, 0.0), 0.0),
+                Isometry2::new(Vector2::new(2.0, 0.0), 0.0),
+            ],
+        };
+        let traj2 = Trajectory {
+            poses: vec![
+                Isometry2::new(Vector2::new(0.0, 1.0), 0.0),
+                Isometry2::new(Vector2::new(0.0, 0.0), 0.0), // Collides with traj1 at t=1
+                Isometry2::new(Vector2::new(0.0, -1.0), 0.0),
+            ],
+        };
+
+        let mapf_result = MapfResult {
+            trajectories: vec![traj1, traj2],
+            footprints: vec![footprint.clone(), footprint],
+            discretization_timestep: 1.0,
+        };
+
+        let session = Session::new(mapf_result.clone());
+
+        // Full plan should find collision at t=1
+        let full_plan = mapf_post(&mapf_result);
+        assert!(full_plan.waypoints.len() > 0);
+
+        // Window plan at t=0 with lookahead 2 (covers t=0, 1)
+        let window_plan = session.plan_window(0, 2);
+        assert_eq!(window_plan.waypoints.len(), 4); // 2 agents * 2 steps
+
+        // Window plan at t=1 with lookahead 2 (covers t=1, 2)
+        let window_plan2 = session.plan_window(1, 2);
+        assert_eq!(window_plan2.waypoints.len(), 4);
     }
 }
