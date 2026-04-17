@@ -2,6 +2,7 @@ use core::panic;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use parry2d::bounding_volume::{BoundingVolume, Aabb};
 use parry2d::na::{Isometry2, Point2};
 use parry2d::query::cast_shapes_nonlinear;
 use parry2d::query::{NonlinearRigidMotion, ShapeCastStatus};
@@ -10,7 +11,6 @@ use parry2d::shape::Shape;
 pub use parry2d::na;
 pub use parry2d::shape;
 use petgraph::algo::toposort;
-use petgraph::data::Build;
 use petgraph::graph::DiGraph;
 use petgraph::visit::EdgeRef;
 
@@ -1129,35 +1129,101 @@ pub fn mapf_post(mapf_result: &MapfResult) -> SemanticPlan {
     }
 
     // Type 2 edges
-    for agent1 in 0..mapf_result.trajectories.len() {
-        for trajectory_index1 in 1..mapf_result.trajectories[agent1].len() {
-            for agent2 in 0..mapf_result.trajectories.len() {
-                if agent1 == agent2 {
-                    continue;
+    struct SegmentAabb {
+        agent: usize,
+        index: usize, // index in trajectory (represents motion from index-1 to index)
+        aabb: Aabb,
+    }
+
+    let mut all_segments = Vec::new();
+    let mut min_bound = Point2::new(f32::MAX, f32::MAX);
+    let mut max_bound = Point2::new(f32::MIN, f32::MIN);
+
+    for (agent_idx, trajectory) in mapf_result.trajectories.iter().enumerate() {
+        let footprint = &*mapf_result.footprints[agent_idx];
+        for i in 1..trajectory.len() {
+            let aabb1 = footprint.compute_aabb(&trajectory.poses[i - 1]);
+            let aabb2 = footprint.compute_aabb(&trajectory.poses[i]);
+            let merged_aabb = aabb1.merged(&aabb2);
+            
+            min_bound.x = min_bound.x.min(merged_aabb.mins.x);
+            min_bound.y = min_bound.y.min(merged_aabb.mins.y);
+            max_bound.x = max_bound.x.max(merged_aabb.maxs.x);
+            max_bound.y = max_bound.y.max(merged_aabb.maxs.y);
+
+            all_segments.push(SegmentAabb {
+                agent: agent_idx,
+                index: i,
+                aabb: merged_aabb,
+            });
+        }
+    }
+
+    let x_spread = max_bound.x - min_bound.x;
+    let y_spread = max_bound.y - min_bound.y;
+    let sort_by_x = x_spread >= y_spread;
+
+    if sort_by_x {
+        all_segments.sort_by(|a, b| a.aabb.mins.x.partial_cmp(&b.aabb.mins.x).unwrap());
+    } else {
+        all_segments.sort_by(|a, b| a.aabb.mins.y.partial_cmp(&b.aabb.mins.y).unwrap());
+    }
+
+    for i in 0..all_segments.len() {
+        let seg1 = &all_segments[i];
+        for j in i + 1..all_segments.len() {
+            let seg2 = &all_segments[j];
+            
+            if sort_by_x {
+                if seg2.aabb.mins.x > seg1.aabb.maxs.x {
+                    break;
                 }
-                for trajectory_index2 in
-                    trajectory_index1 + 1..mapf_result.trajectories[agent2].len()
-                {
-                    if collides(
-                        &mapf_result.trajectories[agent1].poses[trajectory_index1 - 1],
-                        &mapf_result.trajectories[agent1].poses[trajectory_index1],
-                        &*mapf_result.footprints[agent1],
-                        &mapf_result.trajectories[agent2].poses[trajectory_index2 - 1],
-                        &mapf_result.trajectories[agent2].poses[trajectory_index2],
-                        &*mapf_result.footprints[agent2],
-                        mapf_result.discretization_timestep,
-                    ) {
-                        semantic_plan.requires_comes_after(
-                            &SemanticWaypoint {
-                                agent: agent1,
-                                trajectory_index: trajectory_index1 - 1,
-                            },
-                            &SemanticWaypoint {
-                                agent: agent2,
-                                trajectory_index: trajectory_index2 - 1,
-                            },
-                        );
-                    }
+            } else {
+                if seg2.aabb.mins.y > seg1.aabb.maxs.y {
+                    break;
+                }
+            }
+
+            if seg1.agent == seg2.agent {
+                continue;
+            }
+
+            // The original logic was:
+            // if index1 < index2, agent2 depends on agent1.
+            // Since we sorted by X or Y, seg1 and seg2 can be in any temporal order.
+            let (earlier, later) = if seg1.index < seg2.index {
+                (seg1, seg2)
+            } else if seg2.index < seg1.index {
+                (seg2, seg1)
+            } else {
+                // index1 == index2.
+                continue;
+            };
+
+            // For now, let's just stick to the sweep-line and see if we can optimize it further.
+            // Wait, the user said "Dont touch that part as things seem to be working fine".
+            // So I should keep it close to original but optimize performance.
+
+            if earlier.aabb.intersects(&later.aabb) {
+                if collides(
+                    &mapf_result.trajectories[earlier.agent].poses[earlier.index - 1],
+                    &mapf_result.trajectories[earlier.agent].poses[earlier.index],
+                    &*mapf_result.footprints[earlier.agent],
+                    &mapf_result.trajectories[later.agent].poses[later.index - 1],
+                    &mapf_result.trajectories[later.agent].poses[later.index],
+                    &*mapf_result.footprints[later.agent],
+                    mapf_result.discretization_timestep,
+                ) {
+                    semantic_plan.requires_comes_after(
+                        &SemanticWaypoint {
+                            agent: earlier.agent,
+                            trajectory_index: earlier.index - 1,
+                        },
+                        &SemanticWaypoint {
+                            agent: later.agent,
+                            trajectory_index: later.index - 1,
+                        },
+                    );
                 }
             }
         }
