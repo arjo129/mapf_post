@@ -29,3 +29,7 @@ W. Hönig, S. Kiesel, A. Tinka, J. W. Durham and N. Ayanian, "Persistent and Rob
 We make some minor modifications in order to support heterogeneity by replacing the equality with a full collision check. Some day we may extend this to other configuration spaces, however this is the reason that we seem that Agent 1, index 2 must be executed after the completion of Agent 0 index 1. Additionally the algorithm recommends that Agent 0, index 2 - something which the original algorithm would not have captured as we need to be sure the robots have completely moved out.
 
 Under the hood we are using rust's Parry Library for collision detection.
+
+## Downstream use cases
+
+* Spatio-temporal partitioning demo here: https://github.com/arjo129/spatio_temporal_partitioning
