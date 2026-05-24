@@ -1,10 +1,12 @@
-use crate::*;
-use parry2d::na::Vector2;
+use std::sync::Arc;
+
+use mapf_post::na::{Isometry2, Vector2};
+use mapf_post::shape::{Ball, Shape};
+use mapf_post::*;
 
 /// Build a `MapfResult` from per-agent `(x, y)` waypoint lists. Every agent
 /// gets a ball footprint of radius-`r` and the timestep is 1.0.
 fn mapf_result_from(paths: &[Vec<(f32, f32)>], r: f32) -> MapfResult {
-    use parry2d::shape::Ball;
     MapfResult {
         trajectories: paths
             .iter()
