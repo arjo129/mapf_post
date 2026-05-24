@@ -141,6 +141,13 @@ fn test_sweep_line_matches_bruteforce() {
                 vec![(3.0, 0.0), (2.0, 0.0), (1.0, 0.0), (0.0, 0.0)],
             ],
         ),
+        (
+            "unequal_lengths_crossing",
+            vec![
+                vec![(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)],
+                vec![(1.0, -2.0), (1.0, -1.0), (1.0, 0.0), (1.0, 1.0), (1.0, 2.0)],
+            ],
+        ),
     ];
 
     for (name, paths) in scenarios {
