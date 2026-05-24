@@ -16,6 +16,9 @@ use petgraph::visit::EdgeRef;
 
 pub mod spatial_allocation;
 
+#[cfg(test)]
+mod sweep_line_tests;
+
 /// A simple class to estimate a Robot's Semantic position based on its location
 /// on a trajectory. It assumes you start near the start of the robot trajectory.
 pub struct WaypointFollower {
