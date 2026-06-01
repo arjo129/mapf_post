@@ -90,7 +90,7 @@ impl WaypointFollower {
     }
 
     /// Gives the next waypoint we should consider.
-    pub fn next_waypoint(&mut self) -> Isometry2<f32> {
+    pub fn next_waypoint(&self) -> Isometry2<f32> {
         if self.current_pose_on_trajectory + 1 >= self.trajectory.poses.len() {
             return *self.trajectory.poses.last().unwrap();
         }
@@ -98,7 +98,7 @@ impl WaypointFollower {
     }
 
     /// Returns a list of (x,y)  coordinates left for the robot to go through
-    pub fn remaining_trajectory(&mut self) -> Vec<(f32, f32)> {
+    pub fn remaining_trajectory(&self) -> Vec<(f32, f32)> {
         let mut v = vec![];
         for p in self.current_pose_on_trajectory + 1..self.trajectory.poses.len() {
             v.push((
@@ -111,7 +111,7 @@ impl WaypointFollower {
 
     /// Returns the list of (x,y) coordinates that are currently safe for the robot to traverse
     pub fn remaining_safe_trajectory_segment(
-        &mut self,
+        &self,
         seg: &CurrentlyAllocatedTrajSegment,
     ) -> Vec<(f32, f32)> {
         let mut v = vec![];
