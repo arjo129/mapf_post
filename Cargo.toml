@@ -24,3 +24,7 @@ criterion = "0.5"
 [[bench]]
 name = "agent_scaling"
 harness = false
+
+[[bench]]
+name = "vertical_line"
+harness = false
