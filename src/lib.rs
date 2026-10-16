@@ -1070,7 +1070,7 @@ fn collides(
     );
     if let Ok(Some(toi)) = time_of_impact {
         // Check if the time of impact is within the delta_time
-        toi.status == ShapeCastStatus::Converged && toi.time_of_impact <= delta_time
+        toi.time_of_impact <= delta_time
             || toi.status == ShapeCastStatus::PenetratingOrWithinTargetDist
     } else {
         false

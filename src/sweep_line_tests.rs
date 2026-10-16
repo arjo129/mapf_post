@@ -195,3 +195,44 @@ fn test_sort_axis_invariance() {
         "sort-by-X and sort-by-Y branches must produce identical edges"
     );
 }
+
+#[test]
+fn test_corridor_swap_head_on_dependencies() {
+    let r1 = vec![
+        (-1.0, 0.0),
+        (0.0, 0.0),
+        (1.0, 0.0),
+        (2.0, 0.0),
+        (3.0, 0.0),
+        (3.0, 1.0),
+        (3.0, 0.0),
+        (3.0, 0.0),
+        (3.0, 0.0),
+    ];
+    let r2 = vec![
+        (4.0, 0.0),
+        (3.0, 0.0),
+        (2.0, 0.0),
+        (3.0, 0.0),
+        (4.0, 0.0),
+        (3.0, 0.0),
+        (2.0, 0.0),
+        (1.0, 0.0),
+        (0.0, 0.0),
+    ];
+    let mapf_result = mapf_result_from(&[r1, r2], 0.49);
+    let edges = type2_edges_of(&mapf_post(&mapf_result));
+    assert!(
+        edges.contains(&(
+            SemanticWaypoint {
+                agent: 0,
+                trajectory_index: 3,
+            },
+            SemanticWaypoint {
+                agent: 1,
+                trajectory_index: 4,
+            }
+        )),
+        "agent 0 wp 3 must come before agent 1 wp 4 (head-on swap segment)"
+    );
+}
