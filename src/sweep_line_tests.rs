@@ -80,6 +80,52 @@ fn brute_force_type2_edges(
             }
         }
     }
+
+    for agent_a in 0..trajectories.len() {
+        let traj_a = &trajectories[agent_a].poses;
+        let shape_a = &*mapf_result.footprints[agent_a];
+        for i in 0..traj_a.len().saturating_sub(1) {
+            let curr_pose = &traj_a[i];
+            let next_pose = &traj_a[i + 1];
+            for agent_b in 0..trajectories.len() {
+                if agent_a == agent_b {
+                    continue;
+                }
+                let traj_b = &trajectories[agent_b].poses;
+                if traj_b.len() < 2 {
+                    continue;
+                }
+                let shape_b = &*mapf_result.footprints[agent_b];
+                let max_t = i.min(traj_b.len() - 2);
+                for t in 0..=max_t {
+                    if !shapes_overlap(next_pose, shape_a, &traj_b[t], shape_b) {
+                        continue;
+                    }
+                    if t == i {
+                        if let Some(dep_next_pose) = traj_b.get(t + 1) {
+                            if shapes_overlap(curr_pose, shape_a, dep_next_pose, shape_b) {
+                                continue;
+                            }
+                        }
+                    }
+                    if let Some(clear_step) = ((t + 1)..traj_b.len())
+                        .find(|&step| !shapes_overlap(next_pose, shape_a, &traj_b[step], shape_b))
+                    {
+                        edges.insert((
+                            SemanticWaypoint {
+                                agent: agent_b,
+                                trajectory_index: clear_step - 1,
+                            },
+                            SemanticWaypoint {
+                                agent: agent_a,
+                                trajectory_index: i,
+                            },
+                        ));
+                    }
+                }
+            }
+        }
+    }
     edges
 }
 
@@ -235,4 +281,68 @@ fn test_corridor_swap_head_on_dependencies() {
         )),
         "agent 0 wp 3 must come before agent 1 wp 4 (head-on swap segment)"
     );
+    assert!(
+        edges.contains(&(
+            SemanticWaypoint {
+                agent: 0,
+                trajectory_index: 4,
+            },
+            SemanticWaypoint {
+                agent: 1,
+                trajectory_index: 4,
+            }
+        )),
+        "agent 0 wp 4 ((3,0)->(3,1)) must come before agent 1 wp 4 ((4,0)->(3,0))"
+    );
+    assert!(
+        edges.contains(&(
+            SemanticWaypoint {
+                agent: 1,
+                trajectory_index: 5,
+            },
+            SemanticWaypoint {
+                agent: 0,
+                trajectory_index: 5,
+            }
+        )),
+        "agent 1 wp 5 ((3,0)->(2,0)) must come before agent 0 wp 5 ((3,1)->(3,0))"
+    );
+}
+
+#[test]
+fn test_same_direction_follow_without_padded_end_pose() {
+    // Follower (agent 0) moves (0,0) -> (1,0) -> (2,0) -> (3,0) and stops at (3,0).
+    // Leader (agent 1) starts at (3,0) and moves (3,0) -> (4,0) -> (5,0) -> (6,0).
+    let follower = vec![(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (3.0, 0.0)];
+    let leader = vec![(3.0, 0.0), (4.0, 0.0), (5.0, 0.0), (6.0, 0.0)];
+    let mapf_result = mapf_result_from(&[follower, leader], 0.49);
+    let plan = mapf_post(&mapf_result);
+    let edges = type2_edges_of(&plan);
+
+    assert!(
+        edges.contains(&(
+            SemanticWaypoint {
+                agent: 1,
+                trajectory_index: 0,
+            },
+            SemanticWaypoint {
+                agent: 0,
+                trajectory_index: 2,
+            }
+        )),
+        "leader leaving wp 0 at (3,0) must come before follower departing wp 2 ((2,0)->(3,0))"
+    );
+
+    // While leader is still at wp 0 ((3,0)), follower can only claim up to end_id = 3 (stopped at wp 2 = (2,0)).
+    let claims = plan.get_claim_dict(&[
+        SemanticWaypoint {
+            agent: 0,
+            trajectory_index: 0,
+        },
+        SemanticWaypoint {
+            agent: 1,
+            trajectory_index: 0,
+        },
+    ]);
+    assert_eq!(claims.get(&0).unwrap().end_id, 3);
 }

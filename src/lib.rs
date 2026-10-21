@@ -253,14 +253,18 @@ impl SemanticPlan {
             self.depends_on_all_of.insert(*after_id, vec![*before_id]);
             return;
         };
-        to_vals.push(*before_id);
+        if !to_vals.contains(before_id) {
+            to_vals.push(*before_id);
+        }
 
         let Some(to_vals) = self.potential_successors.get_mut(before_id) else {
             self.potential_successors
                 .insert(*before_id, vec![*after_id]);
             return;
         };
-        to_vals.push(*after_id);
+        if !to_vals.contains(after_id) {
+            to_vals.push(*after_id);
+        }
     }
 
     /// Given a Semantic State Estimate, determine if its safe for the current agent to proceed
@@ -829,11 +833,12 @@ impl SemanticPlan {
         for wp in current_positions {
             let mut new_wp = *wp;
             loop {
+                let prev_wp = new_wp;
                 new_wp.trajectory_index += 1;
                 if !self.agent_time_to_wp_id.contains_key(&new_wp) {
                     break;
                 }
-                let Some(deps) = self.comes_before(&new_wp) else {
+                let Some(deps) = self.comes_before(&prev_wp) else {
                     break;
                 };
                 let mut continue_to_mark = true;
@@ -881,7 +886,14 @@ impl SemanticPlan {
         }
 
         for wp in current_pos {
-            if let Some(deps) = self.comes_before(wp) {
+            if wp.trajectory_index == 0 {
+                continue;
+            }
+            let prev_wp = SemanticWaypoint {
+                agent: wp.agent,
+                trajectory_index: wp.trajectory_index - 1,
+            };
+            if let Some(deps) = self.comes_before(&prev_wp) {
                 for &dep_idx in deps {
                     let dep_wp = self.waypoints[dep_idx];
 
@@ -1051,6 +1063,21 @@ fn calculate_nonlinear_rigid_motion(
         linvel: linear_velocity,
         angvel: angular_velocity,
     }
+}
+
+/// Check if two static shapes overlap at the given poses.
+fn shapes_overlap(
+    pose_a: &Isometry2<f32>,
+    shape_a: &dyn Shape,
+    pose_b: &Isometry2<f32>,
+    shape_b: &dyn Shape,
+) -> bool {
+    let aabb_a = shape_a.compute_aabb(pose_a);
+    let aabb_b = shape_b.compute_aabb(pose_b);
+    if !aabb_a.intersects(&aabb_b) {
+        return false;
+    }
+    parry2d::query::intersection_test(pose_a, shape_a, pose_b, shape_b).unwrap_or(false)
 }
 
 /// Check if the robots collide while executing a motion.
@@ -1227,6 +1254,56 @@ pub fn mapf_post(mapf_result: &MapfResult) -> SemanticPlan {
                             trajectory_index: later.index - 1,
                         },
                     );
+                }
+            }
+        }
+    }
+
+    // Target-occupancy clearance check:
+    // Ensure that before `agent_a` departs `poses[i]` into `poses[i + 1]`, any other `agent_b`
+    // occupying a pose overlapping `poses[i + 1]` at `t <= i` has vacated that region.
+    let num_agents = mapf_result.trajectories.len();
+    for agent_a in 0..num_agents {
+        let traj_a = &mapf_result.trajectories[agent_a].poses;
+        let shape_a = &*mapf_result.footprints[agent_a];
+        for i in 0..traj_a.len().saturating_sub(1) {
+            let curr_pose = &traj_a[i];
+            let next_pose = &traj_a[i + 1];
+            for agent_b in 0..num_agents {
+                if agent_a == agent_b {
+                    continue;
+                }
+                let traj_b = &mapf_result.trajectories[agent_b].poses;
+                if traj_b.len() < 2 {
+                    continue;
+                }
+                let shape_b = &*mapf_result.footprints[agent_b];
+                let max_t = i.min(traj_b.len() - 2);
+                for t in 0..=max_t {
+                    if !shapes_overlap(next_pose, shape_a, &traj_b[t], shape_b) {
+                        continue;
+                    }
+                    if t == i {
+                        if let Some(dep_next_pose) = traj_b.get(t + 1) {
+                            if shapes_overlap(curr_pose, shape_a, dep_next_pose, shape_b) {
+                                continue;
+                            }
+                        }
+                    }
+                    if let Some(clear_step) = ((t + 1)..traj_b.len())
+                        .find(|&step| !shapes_overlap(next_pose, shape_a, &traj_b[step], shape_b))
+                    {
+                        semantic_plan.requires_comes_after(
+                            &SemanticWaypoint {
+                                agent: agent_b,
+                                trajectory_index: clear_step - 1,
+                            },
+                            &SemanticWaypoint {
+                                agent: agent_a,
+                                trajectory_index: i,
+                            },
+                        );
+                    }
                 }
             }
         }
